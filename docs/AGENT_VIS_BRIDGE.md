@@ -233,7 +233,7 @@ MCP 호출은 에이전트 작업의 경계에 맞춘다.
   "kind": "change_boundary",
   "label": "Move graph indexing into Tauri Rust backend",
   "visualStyle": "group",
-  "visualTargetHints": ["packages/graph-indexer", "app/src-tauri/src/indexer"]
+  "visualTargetHints": ["app/src-tauri/src/indexer"]
 }
 ```
 

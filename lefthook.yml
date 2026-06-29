@@ -4,7 +4,6 @@ pre-commit:
     - name: Check TS
       glob:
         - app/src/**/*.{ts,tsx,js,jsx}
-        - packages/*/src/**/*.{ts,tsx,js,jsx}
         - app/vite.config.ts
         - package.json
       stage_fixed: true

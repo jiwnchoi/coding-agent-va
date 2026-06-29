@@ -13,25 +13,17 @@ dev-ts:
 
 lint-ts:
   (cd app && ../node_modules/.bin/oxlint src vite.config.ts --type-aware)
-  (cd packages/codex-protocol && ../../node_modules/.bin/oxlint src --type-aware)
-  (cd packages/mcp-visualization-server && ../../node_modules/.bin/oxlint src --type-aware)
 
 format-ts:
   (cd app && ../node_modules/.bin/oxfmt --write src vite.config.ts)
-  (cd packages/codex-protocol && ../../node_modules/.bin/oxfmt --write src)
-  (cd packages/mcp-visualization-server && ../../node_modules/.bin/oxfmt --write src)
 
 typecheck-ts:
   (cd app && ../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
-  (cd packages/codex-protocol && ../../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
-  (cd packages/mcp-visualization-server && ../../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
 
 compile-ts:
   @just build-ts
 
 build-ts:
-  (cd packages/codex-protocol && ../../node_modules/.bin/tsgo -p tsconfig.json)
-  (cd packages/mcp-visualization-server && ../../node_modules/.bin/tsgo -p tsconfig.json)
   (cd app && ../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
   (cd app && ./node_modules/.bin/vite build)
 
