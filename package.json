@@ -5,8 +5,6 @@
   "devDependencies": {
     "@typescript/native-preview": "7.0.0-dev.20260628.1",
     "lefthook": "^2.1.9",
-    "oxc-parser": "^0.137.0",
-    "oxc-transform": "^0.137.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "oxlint-tsgolint": "^0.23.0",
