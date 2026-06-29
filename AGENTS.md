@@ -1,4 +1,4 @@
-## Commit & PR
+## Commit &amp; PR
 
 - [Build, Test, and Development Commands](docs/agents/build-test-and-development-commands.md)
 - [Commit Conventions](docs/agents/commit-conventions.md)
@@ -19,3 +19,10 @@
 - For Android Gradle commands, use `just gradlew <task/args...>` instead of invoking `./gradlew` directly.
 - After completing a task, always find and run an appropriate check command from the `justfile`.
 - Never ignore linter errors. Always refactor the code.
+
+
+
+## Language Guideline
+
+- Source codes should be in English, But documents can be Korean.
+
