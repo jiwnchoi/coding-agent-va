@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "name": "@coding-agent-va/codex-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260628.1"
+  }
+}

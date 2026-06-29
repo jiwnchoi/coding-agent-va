@@ -1,0 +1,25 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src-tauri/target/release/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "format": {
+      "cache": false
+    },
+    "format:check": {
+      "cache": false
+    }
+  }
+}

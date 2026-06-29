@@ -1,0 +1,15 @@
+{
+  "type": "module",
+  "name": "@coding-agent-va/mcp-visualization-server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "dependencies": {
+    "@coding-agent-va/codex-protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260628.1"
+  }
+}

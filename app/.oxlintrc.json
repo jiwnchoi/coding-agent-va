@@ -1,0 +1,284 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "import", "promise", "jest"],
+  "rules": {
+    "unicorn/no-empty-file": "off",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/jsx-boolean-value": ["error", "never"],
+    "react/jsx-fragments": ["error", "syntax"],
+    "react/jsx-no-useless-fragment": [
+      "error",
+      {
+        "allowExpressions": true
+      }
+    ],
+    "react/self-closing-comp": "error",
+    "import/no-cycle": [
+      "error",
+      {
+        "ignoreExternal": true
+      }
+    ],
+    "import/no-namespace": "error",
+    "import/no-relative-parent-imports": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "import/prefer-default-export": "off",
+    "promise/no-callback-in-promise": "error",
+    "promise/no-new-statics": "error",
+    "promise/no-return-in-finally": "error",
+    "react-you-might-not-need-an-effect/no-derived-state": "warn",
+    "react-you-might-not-need-an-effect/no-chain-state-updates": "warn",
+    "react-you-might-not-need-an-effect/no-event-handler": "warn",
+    "react-you-might-not-need-an-effect/no-adjust-state-on-prop-change": "warn",
+    "react-you-might-not-need-an-effect/no-reset-all-state-on-prop-change": "warn",
+    "react-you-might-not-need-an-effect/no-pass-live-state-to-parent": "warn",
+    "react-you-might-not-need-an-effect/no-pass-data-to-parent": "warn",
+    "react-you-might-not-need-an-effect/no-external-store-subscription": "warn",
+    "react-you-might-not-need-an-effect/no-initialize-state": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.{ts,tsx}", "modules/*/src/**/*.{ts,tsx}"],
+      "rules": {
+        "complexity": ["error", 30],
+        "max-depth": ["error", 6],
+        "max-lines": [
+          "error",
+          {
+            "max": 900,
+            "skipBlankLines": true,
+            "skipComments": true
+          }
+        ],
+        "max-lines-per-function": [
+          "error",
+          {
+            "max": 260,
+            "skipBlankLines": true,
+            "skipComments": true,
+            "IIFEs": true
+          }
+        ],
+        "no-console": "error",
+        "max-params": ["error", 8],
+        "max-statements": ["error", 120],
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react-native",
+                "importNames": ["Animated"],
+                "message": "Use react-native-reanimated worklets instead of Animated from react-native."
+              },
+              {
+                "name": "@react-navigation/stack",
+                "message": "Use @react-navigation/native-stack for native transitions and better performance."
+              },
+              {
+                "name": "crypto-js",
+                "message": "Use a native crypto implementation (for example react-native-quick-crypto) for heavy crypto operations."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@formatjs/intl-getcanonicallocales/polyfill",
+                  "@formatjs/intl-numberformat/polyfill",
+                  "@formatjs/intl-numberformat/locale-data/*",
+                  "@formatjs/intl-datetimeformat/polyfill",
+                  "@formatjs/intl-datetimeformat/locale-data/*"
+                ],
+                "message": "Hermes supports these Intl APIs natively. Remove these polyfills unless a proven compatibility issue requires them."
+              },
+              {
+                "group": [
+                  "@/shared/hooks/**",
+                  "!@/shared/hooks",
+                  "!@/shared/hooks/index",
+                  "!@/shared/hooks/index.ts",
+                  "!@/shared/hooks/index.tsx"
+                ],
+                "message": "Import shared hooks through the shared hooks barrel (@/shared/hooks). Deep imports are not allowed."
+              },
+              {
+                "group": [
+                  "@/features/entry/hooks/**",
+                  "!@/features/entry/hooks",
+                  "!@/features/entry/hooks/index",
+                  "!@/features/entry/hooks/index.ts",
+                  "!@/features/entry/hooks/index.tsx"
+                ],
+                "message": "Import entry hooks through the entry hooks barrel (@/features/entry/hooks). Deep imports are not allowed."
+              },
+              {
+                "group": ["@/features/*/*/*/*/**"],
+                "message": "Import feature internals through folder barrels (for example @/features/<feature>/<layer>/<slice>) instead of file-level deep paths."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/**/*.{ts,tsx}"],
+      "rules": {
+        "import/no-named-export": "error"
+      }
+    },
+    {
+      "files": ["src/app/_layout.tsx"],
+      "rules": {
+        "import/no-named-export": "off"
+      }
+    },
+    {
+      "files": ["modules/logger/src/Logger.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "src/**/hooks/**/*.{ts,tsx}",
+        "modules/*/src/**/hooks/**/*.{ts,tsx}",
+        "src/**/*.constants.ts",
+        "modules/*/src/**/*.constants.ts"
+      ],
+      "rules": {
+        "import/no-default-export": "error"
+      }
+    },
+    {
+      "files": ["src/**/*.{ts,tsx}", "modules/*/src/**/*.{ts,tsx}"],
+      "excludeFiles": [
+        "src/shared/lib/sqlite/**",
+        "src/**/persistence/**",
+        "modules/*/src/persistence/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "expo-sqlite",
+                "message": "Import expo-sqlite only from src/shared/lib/sqlite/** or domain persistence/** modules."
+              },
+              {
+                "name": "drizzle-orm/expo-sqlite",
+                "message": "Import drizzle-orm/expo-sqlite only from domain persistence/** modules."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/app/**/*.{ts,tsx}",
+        "src/shared/**/*.{ts,tsx}",
+        "src/types/**/*.{ts,tsx}",
+        "src/features/feature-map.tsx",
+        "modules/*/src/**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react-native",
+                "importNames": ["Animated"],
+                "message": "Use react-native-reanimated worklets instead of Animated from react-native."
+              },
+              {
+                "name": "@react-navigation/stack",
+                "message": "Use @react-navigation/native-stack for native transitions and better performance."
+              },
+              {
+                "name": "crypto-js",
+                "message": "Use a native crypto implementation (for example react-native-quick-crypto) for heavy crypto operations."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@formatjs/intl-getcanonicallocales/polyfill",
+                  "@formatjs/intl-numberformat/polyfill",
+                  "@formatjs/intl-numberformat/locale-data/*",
+                  "@formatjs/intl-datetimeformat/polyfill",
+                  "@formatjs/intl-datetimeformat/locale-data/*"
+                ],
+                "message": "Hermes supports these Intl APIs natively. Remove these polyfills unless a proven compatibility issue requires them."
+              },
+              {
+                "group": [
+                  "@/features/*/**",
+                  "!@/features/*/index",
+                  "!@/features/*/index.ts",
+                  "!@/features/*/index.tsx"
+                ],
+                "message": "Import feature internals through barrels (index.ts/index.tsx). Deep imports from outside the feature are not allowed."
+              },
+              {
+                "group": [
+                  "@/shared/hooks/**",
+                  "!@/shared/hooks",
+                  "!@/shared/hooks/index",
+                  "!@/shared/hooks/index.ts",
+                  "!@/shared/hooks/index.tsx"
+                ],
+                "message": "Import shared hooks through the shared hooks barrel (@/shared/hooks). Deep imports are not allowed."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/*.{test,spec}.{ts,tsx,js,jsx}"],
+      "rules": {
+        "jest/no-focused-tests": "error",
+        "jest/valid-describe-callback": "error",
+        "jest/valid-expect": "error",
+        "jest/no-disabled-tests": "warn",
+        "complexity": "off",
+        "max-depth": "off",
+        "max-lines": "off",
+        "max-lines-per-function": "off",
+        "max-params": "off",
+        "max-statements": "off"
+      }
+    },
+    {
+      "files": ["vite.config.ts"],
+      "env": {
+        "node": true
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "../../node_modules/**",
+    "../../.expo/**",
+    "../../.cache/**",
+    "../../dist/**",
+    "../../ios/**",
+    "../../android/**",
+    "../../.agents/**",
+    "../../.claude/**",
+    "../../build/**",
+    "../../pyproject.toml",
+    "../../web-build/**",
+    "../../expo-env.d.ts",
+    "../../src/domains/camera-roll-scan/api/**",
+    "../../**/*.gen.ts"
+  ],
+  "jsPlugins": ["eslint-plugin-react-you-might-not-need-an-effect"],
+  "env": {
+    "browser": true,
+    "builtin": true
+  }
+}

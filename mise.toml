@@ -1,0 +1,6 @@
+[tools]
+node = "24.8.0"
+pnpm = "11.9.0"
+rust = { version = "1.92.0", components = "rustfmt,clippy" }
+"github:casey/just" = "1.43.1"
+"github:evilmartians/lefthook" = "2.1.9"

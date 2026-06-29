@@ -1,0 +1,36 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: Check TS
+      glob:
+        - app/src/**/*.{ts,tsx,js,jsx}
+        - packages/*/src/**/*.{ts,tsx,js,jsx}
+        - app/vite.config.ts
+        - package.json
+      stage_fixed: true
+      run: |
+        just format-ts
+        just lint-ts
+        just typecheck-ts
+    - name: Check Rust
+      glob:
+        - app/src-tauri/src/**/*.rs
+        - app/src-tauri/Cargo.toml
+      stage_fixed: true
+      run: |
+        just format-rust
+        just lint-rust
+        just typecheck-rust
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: Test TS
+      run: just test-ts
+    - name: Test Rust
+      run: just test-rust
+
+post-merge:
+  jobs:
+    - name: Install Packages
+      run: just prepare

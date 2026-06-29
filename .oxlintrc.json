@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "import", "jsx-a11y", "node", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "import/no-unassigned-import": "off",
+    "react/react-in-jsx-scope": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "overrides": [
+    {
+      "files": ["apps/desktop/src/**/*.{ts,tsx}"],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": ["apps/desktop/**/*.{ts,tsx}"],
+      "plugins": ["typescript", "unicorn", "oxc", "react", "import", "jsx-a11y", "node", "promise"],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": ["packages/**/*.{ts,tsx}", "*.config.{js,ts,mjs,cjs}", "apps/desktop/vite.config.ts"],
+      "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise"],
+      "env": {
+        "node": true
+      }
+    }
+  ]
+}
