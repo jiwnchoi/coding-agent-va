@@ -384,9 +384,31 @@ Detail Panel:
 5. `ChangeCluster`를 규칙 기반으로 생성한다.
 6. Timeline과 Context Graph에 cluster와 근거 이벤트를 표시한다.
 
+## 현재 프로토타입 구현
+
+현재 구현은 Tauri command 기반 placeholder bridge로 시작한다.
+
+- `load_current_codex_visualization`
+  - 현재 workspace와 Codex runtime home을 기준으로 snapshot을 만든다.
+  - SQLite `threads`, rollout JSONL, watcher plan, workspace graph를 합친다.
+- `record_visual_agent_event`
+  - MCP tool 호출을 붙이기 전 단계의 placeholder ingest endpoint다.
+  - payload는 이 문서의 `VisualAgentEvent` taxonomy를 따른다.
+- `FocusSignal`
+  - rollout message/tool/command/patch 이벤트에서 path mention을 추출해 생성한다.
+  - patch는 `edit_focus`, command/tool call은 `view_focus`, 나머지는 `context_focus`로 시작한다.
+- `ChangeCluster`
+  - 같은 snapshot 안의 focus signal, visual event, evidence event id를 규칙 기반으로 묶는다.
+- UI mapping
+  - Timeline은 normalized session event를 표시한다.
+  - Context Graph는 focus score, selected event, cluster, pin 상태를 표시한다.
+  - Detail Panel은 cluster summary, visual event, focus signal, watcher diagnostics를 함께 표시한다.
+
+브라우저 preview에서는 로컬 Tauri API를 사용할 수 없으므로 같은 모델의 current-workspace fallback snapshot을 사용한다. Tauri 앱에서는 runtime home을 직접 읽는다.
+
 ## 열린 질문
 
-- MCP visual event를 현재 placeholder tool 위에 얹을지, 별도 tool로 분리할지 결정해야 한다.
+- MCP visual event를 현재 placeholder command 위에 얹을지, 별도 MCP tool/server로 분리할지 결정해야 한다.
 - `relatedHints`에 path-like string을 허용할지, graph node id만 허용할지 정해야 한다.
 - session text parser가 assistant message를 얼마나 깊게 자연어 분석할지 정해야 한다.
 - cluster title은 MCP label을 우선할지, session parser가 생성한 요약을 우선할지 정해야 한다.
