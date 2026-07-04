@@ -17,5 +17,11 @@
     "key": "w",
     "metaKey": true,
     "action": "closeSelectedSessionTab"
+  },
+  {
+    "id": "most-recently-active-session-tab",
+    "key": "Enter",
+    "metaKey": true,
+    "action": "selectMostRecentlyActiveSessionTab"
   }
 ]

@@ -108,6 +108,39 @@ function closeSessionTab(openSessionIds: string[], sessionId: string, selectedSe
   };
 }
 
+function updateSessionHistory(
+  historySessionIds: string[],
+  previousSessionId: string,
+  nextSessionId: string
+) {
+  if (!previousSessionId || previousSessionId === nextSessionId) {
+    return historySessionIds;
+  }
+
+  return [
+    previousSessionId,
+    ...historySessionIds.filter(
+      (sessionId) => sessionId !== previousSessionId && sessionId !== nextSessionId
+    ),
+  ];
+}
+
+function selectMostRecentlyActiveSession(
+  historySessionIds: string[],
+  openSessionIds: string[],
+  selectedSessionId: string
+) {
+  if (openSessionIds.length <= 1) {
+    return selectedSessionId;
+  }
+
+  const nextSessionId = historySessionIds.find(
+    (sessionId) => sessionId !== selectedSessionId && openSessionIds.includes(sessionId)
+  );
+
+  return nextSessionId ?? selectedSessionId;
+}
+
 function reconcileTabState({
   currentDismissedSessionIds,
   currentOpenSessionIds,
@@ -408,35 +441,18 @@ function buildShortcuts(
   });
 }
 
-function App() {
-  const [runtimeHome, setRuntimeHome] = useState<string>("");
+function useSessionState() {
   const [sessions, setSessions] = useState<CodexSessionSummary[]>([]);
   const [openSessionIds, setOpenSessionIds] = useState<string[]>([]);
   const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
-  const [watchId, setWatchId] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
-  const [fileActivity, setFileActivity] = useState<CodexSessionFileActivity>({
-    readFiles: [],
-    editedFiles: [],
-    deletedFiles: [],
-  });
-  const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
+  const [sessionHistoryIds, setSessionHistoryIds] = useState<string[]>([]);
   const activeSessionIdsRef = useRef<string[]>([]);
   const dismissedSessionIdsRef = useRef(dismissedSessionIds);
   const sessionsRef = useRef(sessions);
   const openSessionIdsRef = useRef(openSessionIds);
   const selectedSessionIdRef = useRef(selectedSessionId);
-  const openSessions = openSessionIds
-    .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
-    .filter((session): session is CodexSessionSummary => session !== null);
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
-  const selectedSessionLabel =
-    selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
-  const activitySections = buildActivitySections(fileActivity);
+  const sessionHistoryIdsRef = useRef(sessionHistoryIds);
 
   useEffect(() => {
     dismissedSessionIdsRef.current = dismissedSessionIds;
@@ -454,6 +470,19 @@ function App() {
     selectedSessionIdRef.current = selectedSessionId;
   }, [selectedSessionId]);
 
+  useEffect(() => {
+    sessionHistoryIdsRef.current = sessionHistoryIds;
+  }, [sessionHistoryIds]);
+
+  function setSelectedSessionWithHistory(nextSessionId: string) {
+    const previousSessionId = selectedSessionIdRef.current;
+
+    setSessionHistoryIds((currentHistorySessionIds) =>
+      updateSessionHistory(currentHistorySessionIds, previousSessionId, nextSessionId)
+    );
+    setSelectedSessionId(nextSessionId);
+  }
+
   function selectSession(sessionId: string) {
     setDismissedSessionIds((currentDismissedSessionIds) =>
       currentDismissedSessionIds.filter((dismissedSessionId) => dismissedSessionId !== sessionId)
@@ -465,8 +494,7 @@ function App() {
 
       return [...currentOpenSessionIds, sessionId];
     });
-    setSelectedSessionId(sessionId);
-    setSearchQuery("");
+    setSelectedSessionWithHistory(sessionId);
   }
 
   function handleCloseSession(sessionId: string) {
@@ -477,7 +505,10 @@ function App() {
     );
 
     setOpenSessionIds(nextOpenSessionIds);
-    setSelectedSessionId(nextSelectedSessionId);
+    setSelectedSessionWithHistory(nextSelectedSessionId);
+    setSessionHistoryIds((currentHistorySessionIds) =>
+      currentHistorySessionIds.filter((historySessionId) => historySessionId !== sessionId)
+    );
     setDismissedSessionIds((currentDismissedSessionIds) =>
       currentDismissedSessionIds.includes(sessionId)
         ? currentDismissedSessionIds
@@ -499,19 +530,87 @@ function App() {
     setSessions(nextSessions);
     setDismissedSessionIds(nextDismissedSessionIds);
     setOpenSessionIds(nextOpenSessionIds);
-    setSelectedSessionId(nextSelectedSessionId);
+    setSessionHistoryIds((currentHistorySessionIds) =>
+      currentHistorySessionIds.filter(
+        (sessionId) =>
+          nextOpenSessionIds.includes(sessionId) &&
+          nextSessions.some((session) => session.id === sessionId)
+      )
+    );
+    setSelectedSessionWithHistory(nextSelectedSessionId);
     activeSessionIdsRef.current = activeSessionIds;
+  }
+
+  return {
+    sessions,
+    openSessionIds,
+    selectedSessionId,
+    sessionsRef,
+    openSessionIdsRef,
+    selectedSessionIdRef,
+    sessionHistoryIdsRef,
+    selectSession,
+    handleCloseSession,
+    reconcileSessions,
+  };
+}
+
+function App() {
+  const [runtimeHome, setRuntimeHome] = useState<string>("");
+  const {
+    sessions,
+    openSessionIds,
+    selectedSessionId,
+    sessionsRef,
+    openSessionIdsRef,
+    selectedSessionIdRef,
+    sessionHistoryIdsRef,
+    selectSession,
+    handleCloseSession,
+    reconcileSessions,
+  } = useSessionState();
+  const [watchId, setWatchId] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
+  const [fileActivity, setFileActivity] = useState<CodexSessionFileActivity>({
+    readFiles: [],
+    editedFiles: [],
+    deletedFiles: [],
+  });
+  const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
+  const openSessions = openSessionIds
+    .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
+    .filter((session): session is CodexSessionSummary => session !== null);
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedSessionLabel =
+    selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
+  const activitySections = buildActivitySections(fileActivity);
+
+  function handleSelectSession(sessionId: string) {
+    selectSession(sessionId);
+    setSearchQuery("");
   }
 
   const shortcutActions: Record<string, KeyboardShortcut["handler"]> = {
     selectNextSessionTab: () => {
-      setSelectedSessionId((currentSessionId) =>
-        rotateSession(openSessionIdsRef.current, currentSessionId, 1)
+      handleSelectSession(
+        rotateSession(openSessionIdsRef.current, selectedSessionIdRef.current, 1)
       );
     },
     selectPreviousSessionTab: () => {
-      setSelectedSessionId((currentSessionId) =>
-        rotateSession(openSessionIdsRef.current, currentSessionId, -1)
+      handleSelectSession(
+        rotateSession(openSessionIdsRef.current, selectedSessionIdRef.current, -1)
+      );
+    },
+    selectMostRecentlyActiveSessionTab: () => {
+      handleSelectSession(
+        selectMostRecentlyActiveSession(
+          sessionHistoryIdsRef.current,
+          openSessionIdsRef.current,
+          selectedSessionIdRef.current
+        )
       );
     },
     closeSelectedSessionTab: () => {
@@ -670,7 +769,7 @@ function App() {
               searchQuery={searchQuery}
               sessions={sessions}
               setSearchQuery={setSearchQuery}
-              onSelectSession={selectSession}
+              onSelectSession={handleSelectSession}
             />
           </div>
           <div className="min-w-0 flex-1">
@@ -679,7 +778,7 @@ function App() {
               openSessions={openSessions}
               selectedSessionId={selectedSessionId}
               onCloseSession={handleCloseSession}
-              onSelectSession={selectSession}
+              onSelectSession={handleSelectSession}
             />
           </div>
         </div>
