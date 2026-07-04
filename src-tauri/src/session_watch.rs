@@ -1,10 +1,13 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, State};
+use walkdir::WalkDir;
 use watchexec::Watchexec;
 
 const SESSION_WATCH_EVENT: &str = "codex-session-watch-event";
@@ -44,6 +47,50 @@ pub struct SessionWatchEventPayload {
     pub timestamp_ms: u64,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionSummary {
+    pub id: String,
+    pub title: String,
+    pub rollout_path: String,
+    pub cwd: Option<String>,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionList {
+    pub runtime_home: String,
+    pub sessions: Vec<CodexSessionSummary>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionFileActivity {
+    pub read_files: Vec<String>,
+    pub edited_files: Vec<String>,
+    pub deleted_files: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SessionIndexEntry {
+    id: String,
+    thread_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RolloutEnvelope {
+    #[serde(rename = "type")]
+    entry_type: String,
+    payload: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct ExecCommandArguments {
+    cmd: String,
+    workdir: Option<String>,
+}
+
 #[derive(Default)]
 pub struct SessionWatchState {
     watches: Mutex<HashMap<String, SessionWatchHandle>>,
@@ -71,7 +118,70 @@ pub fn plan_codex_session_watch(runtime_home: String) -> Result<SessionWatchPlan
 }
 
 #[tauri::command]
-pub fn start_codex_session_watch(
+pub fn list_codex_sessions(runtime_home: Option<String>) -> Result<CodexSessionList, String> {
+    let runtime_home_path = resolve_runtime_home(runtime_home)?;
+    let session_titles = read_session_titles(&runtime_home_path);
+    let sessions_dir = runtime_home_path.join("sessions");
+
+    let mut sessions = WalkDir::new(&sessions_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| {
+            let file_name = entry.file_name().to_str()?;
+            if !(file_name.starts_with("rollout-") && file_name.ends_with(".jsonl")) {
+                return None;
+            }
+
+            let session_id = extract_session_id(file_name)?;
+            let metadata = entry.metadata().ok()?;
+            let updated_at_ms = metadata
+                .modified()
+                .ok()
+                .and_then(system_time_to_ms)
+                .unwrap_or_default();
+            let cwd = read_session_meta_cwd(entry.path());
+            let title = read_first_user_prompt_title(entry.path())
+                .or_else(|| {
+                    session_titles
+                        .get(&session_id)
+                        .cloned()
+                        .map(normalize_title_whitespace)
+                })
+                .or_else(|| {
+                    cwd.as_ref()
+                        .and_then(|path| Path::new(path).file_name()?.to_str().map(str::to_string))
+                })
+                .unwrap_or_else(|| session_id.clone());
+
+            Some(CodexSessionSummary {
+                id: session_id,
+                title,
+                rollout_path: entry.path().display().to_string(),
+                cwd,
+                updated_at_ms,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    sessions.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
+
+    Ok(CodexSessionList {
+        runtime_home: runtime_home_path.display().to_string(),
+        sessions,
+    })
+}
+
+#[tauri::command]
+pub fn get_codex_session_file_activity(
+    rollout_path: String,
+    cwd: Option<String>,
+) -> Result<CodexSessionFileActivity, String> {
+    read_codex_session_file_activity(&PathBuf::from(rollout_path), cwd.as_deref())
+}
+
+#[tauri::command]
+pub async fn start_codex_session_watch(
     app: AppHandle,
     state: State<'_, SessionWatchState>,
     runtime_home: String,
@@ -206,25 +316,318 @@ fn stop_existing_watch(state: &SessionWatchState, watch_id: &str) {
     }
 }
 
-fn create_watch_plan(runtime_home: &str) -> Result<SessionWatchPlan, String> {
-    let runtime_home_path = PathBuf::from(runtime_home);
-    if !runtime_home_path.exists() {
+fn resolve_runtime_home(runtime_home: Option<String>) -> Result<PathBuf, String> {
+    let candidate = runtime_home
+        .map(PathBuf::from)
+        .or_else(default_runtime_home)
+        .ok_or_else(|| "failed to resolve Codex runtime home".to_string())?;
+
+    if !candidate.exists() {
         return Err(format!(
             "runtime home does not exist: {}",
-            runtime_home_path.display()
+            candidate.display()
         ));
     }
 
-    if !runtime_home_path.is_dir() {
+    if !candidate.is_dir() {
         return Err(format!(
             "runtime home is not a directory: {}",
-            runtime_home_path.display()
+            candidate.display()
         ));
     }
 
-    let runtime_home_path = runtime_home_path
+    candidate
         .canonicalize()
-        .map_err(|error| format!("failed to canonicalize runtime home: {error}"))?;
+        .map_err(|error| format!("failed to canonicalize runtime home: {error}"))
+}
+
+fn default_runtime_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex"))
+}
+
+fn read_session_titles(runtime_home: &Path) -> HashMap<String, String> {
+    let session_index_path = runtime_home.join("session_index.jsonl");
+    let Ok(file) = File::open(session_index_path) else {
+        return HashMap::new();
+    };
+
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str::<SessionIndexEntry>(&line).ok())
+        .filter_map(|entry| entry.thread_name.map(|title| (entry.id, title)))
+        .collect()
+}
+
+fn extract_session_id(file_name: &str) -> Option<String> {
+    file_name
+        .strip_prefix("rollout-")?
+        .strip_suffix(".jsonl")?
+        .rsplit_once('-')
+        .map(|(_, session_id)| session_id.to_string())
+}
+
+fn read_session_meta_cwd(path: &Path) -> Option<String> {
+    let file = File::open(path).ok()?;
+    let first_line = BufReader::new(file).lines().next()?.ok()?;
+    let json = serde_json::from_str::<serde_json::Value>(&first_line).ok()?;
+
+    json.get("payload")?
+        .get("cwd")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn read_first_user_prompt_title(path: &Path) -> Option<String> {
+    let file = File::open(path).ok()?;
+
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(envelope) = serde_json::from_str::<RolloutEnvelope>(&line) else {
+            continue;
+        };
+        if envelope.entry_type != "response_item" {
+            continue;
+        }
+
+        let payload = &envelope.payload;
+        if payload.get("type")?.as_str()? != "message" || payload.get("role")?.as_str()? != "user" {
+            continue;
+        }
+
+        let Some(content) = payload.get("content").and_then(|value| value.as_array()) else {
+            continue;
+        };
+        for item in content {
+            if item.get("type").and_then(|value| value.as_str()) != Some("input_text") {
+                continue;
+            }
+
+            let Some(text) = item.get("text").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let title = normalize_title_whitespace(text);
+            if !title.is_empty() && !is_metadata_prompt(&title) {
+                return Some(title);
+            }
+        }
+    }
+
+    None
+}
+
+fn read_codex_session_file_activity(
+    rollout_path: &Path,
+    cwd: Option<&str>,
+) -> Result<CodexSessionFileActivity, String> {
+    let file = File::open(rollout_path)
+        .map_err(|error| format!("failed to open rollout {}: {error}", rollout_path.display()))?;
+    let workspace_root = cwd.map(PathBuf::from);
+    let mut read_files = HashMap::<String, u64>::new();
+    let mut edited_files = HashMap::<String, u64>::new();
+    let mut deleted_files = HashMap::<String, u64>::new();
+
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(envelope) = serde_json::from_str::<RolloutEnvelope>(&line) else {
+            continue;
+        };
+
+        let timestamp_ms = envelope
+            .payload
+            .get("timestamp")
+            .and_then(|value| value.as_str())
+            .and_then(timestamp_string_to_ms)
+            .unwrap_or_default();
+
+        match envelope.entry_type.as_str() {
+            "response_item" => collect_read_files(
+                &envelope.payload,
+                workspace_root.as_deref(),
+                timestamp_ms,
+                &mut read_files,
+            ),
+            "event_msg" => collect_written_files(
+                &envelope.payload,
+                timestamp_ms,
+                &mut edited_files,
+                &mut deleted_files,
+            ),
+            _ => {}
+        }
+    }
+
+    Ok(CodexSessionFileActivity {
+        read_files: sort_file_activity(read_files),
+        edited_files: sort_file_activity(edited_files),
+        deleted_files: sort_file_activity(deleted_files),
+    })
+}
+
+fn collect_read_files(
+    payload: &serde_json::Value,
+    workspace_root: Option<&Path>,
+    timestamp_ms: u64,
+    read_files: &mut HashMap<String, u64>,
+) {
+    if payload.get("type").and_then(|value| value.as_str()) != Some("function_call") {
+        return;
+    }
+
+    if payload.get("name").and_then(|value| value.as_str()) != Some("exec_command") {
+        return;
+    }
+
+    let Some(arguments) = payload.get("arguments").and_then(|value| value.as_str()) else {
+        return;
+    };
+    let Ok(exec_arguments) = serde_json::from_str::<ExecCommandArguments>(arguments) else {
+        return;
+    };
+    let command_root = exec_arguments
+        .workdir
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| workspace_root.map(Path::to_path_buf));
+
+    let Some(command_root) = command_root else {
+        return;
+    };
+
+    for token in shell_like_tokens(&exec_arguments.cmd) {
+        let Some(path) = normalize_activity_path(&token, &command_root) else {
+            continue;
+        };
+
+        read_files
+            .entry(path)
+            .and_modify(|current| *current = (*current).max(timestamp_ms))
+            .or_insert(timestamp_ms);
+    }
+}
+
+fn collect_written_files(
+    payload: &serde_json::Value,
+    timestamp_ms: u64,
+    edited_files: &mut HashMap<String, u64>,
+    deleted_files: &mut HashMap<String, u64>,
+) {
+    if payload.get("type").and_then(|value| value.as_str()) != Some("patch_apply_end") {
+        return;
+    }
+
+    let Some(changes) = payload.get("changes").and_then(|value| value.as_object()) else {
+        return;
+    };
+
+    for (path, change) in changes {
+        let Some(change_type) = change.get("type").and_then(|value| value.as_str()) else {
+            continue;
+        };
+
+        match change_type {
+            "delete" => {
+                deleted_files
+                    .entry(path.clone())
+                    .and_modify(|current| *current = (*current).max(timestamp_ms))
+                    .or_insert(timestamp_ms);
+            }
+            "add" | "update" | "move" => {
+                edited_files
+                    .entry(path.clone())
+                    .and_modify(|current| *current = (*current).max(timestamp_ms))
+                    .or_insert(timestamp_ms);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn shell_like_tokens(command: &str) -> Vec<String> {
+    command
+        .split(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    '"' | '\'' | '(' | ')' | '[' | ']' | '{' | '}' | ';' | '|' | '&' | ','
+                )
+        })
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn normalize_activity_path(token: &str, workspace_root: &Path) -> Option<String> {
+    if token.starts_with('-')
+        || token.contains('*')
+        || token.contains('$')
+        || token.contains("&&")
+        || token.contains("||")
+        || token == "."
+        || token == ".."
+    {
+        return None;
+    }
+
+    let workspace_root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
+    let candidate = if token.starts_with('/') {
+        PathBuf::from(token)
+    } else {
+        workspace_root.join(token)
+    };
+
+    let normalized = candidate.canonicalize().ok()?;
+    if !normalized.is_file() || !normalized.starts_with(workspace_root) {
+        return None;
+    }
+
+    Some(normalized.display().to_string())
+}
+
+fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> {
+    let mut entries = activity.into_iter().collect::<Vec<_>>();
+    entries.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    entries.into_iter().map(|(path, _)| path).collect()
+}
+
+fn normalize_title_whitespace(text: impl AsRef<str>) -> String {
+    strip_image_attachment_markers(text.as_ref())
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn strip_image_attachment_markers(text: &str) -> String {
+    let mut sanitized = String::with_capacity(text.len());
+    let mut remaining = text;
+
+    while let Some(marker_start) = remaining.find("<image ") {
+        sanitized.push_str(&remaining[..marker_start]);
+
+        let after_marker_start = &remaining[marker_start..];
+        let Some(marker_end) = after_marker_start.find('>') else {
+            sanitized.push_str(after_marker_start);
+            return sanitized;
+        };
+
+        remaining = &after_marker_start[marker_end + 1..];
+    }
+
+    sanitized.push_str(remaining);
+    sanitized
+}
+
+fn is_metadata_prompt(text: &str) -> bool {
+    if text.starts_with("# AGENTS.md instructions") {
+        return true;
+    }
+
+    let first_token = text.split_whitespace().next().unwrap_or_default();
+    first_token.starts_with('<') && first_token.ends_with('>')
+}
+
+fn create_watch_plan(runtime_home: &str) -> Result<SessionWatchPlan, String> {
+    let runtime_home_path = resolve_runtime_home(Some(runtime_home.to_string()))?;
     let sessions_dir = runtime_home_path.join("sessions");
     let sqlite_path = runtime_home_path.join("state_5.sqlite");
     let sqlite_wal_path = runtime_home_path.join("state_5.sqlite-wal");
@@ -337,10 +740,27 @@ fn now_timestamp_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn system_time_to_ms(system_time: SystemTime) -> Option<u64> {
+    system_time
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn timestamp_string_to_ms(timestamp: &str) -> Option<u64> {
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .map(|value| value.timestamp_millis() as u64)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{create_watch_plan, is_relevant_session_path};
-    use std::fs;
+    use super::{
+        create_watch_plan, is_metadata_prompt, is_relevant_session_path,
+        normalize_title_whitespace, read_codex_session_file_activity, read_first_user_prompt_title,
+    };
+    use std::fs::{self, File};
+    use std::io::Write;
     use std::path::Path;
 
     #[test]
@@ -395,5 +815,221 @@ mod tests {
             .all(|target| target.path == canonical_temp_dir.display().to_string()));
 
         fs::remove_dir_all(temp_dir).expect("cleanup temp runtime home");
+    }
+
+    #[test]
+    fn extracts_first_meaningful_user_prompt_for_session_title() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "coding-agent-va-session-title-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp directory");
+
+        let rollout_path = temp_dir.join("rollout-test.jsonl");
+        let mut file = File::create(&rollout_path).expect("create rollout file");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "# AGENTS.md instructions for /tmp/repo" }]
+                }
+            })
+        )
+        .expect("write agents row");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "<environment_context> cwd=/tmp </environment_context>" }]
+                }
+            })
+        )
+        .expect("write env row");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "session 상단에 검색 기능 추가해주고,\n\n첫 유저 프롬프트를 보여줘" }]
+                }
+            })
+        )
+        .expect("write real prompt row");
+
+        assert_eq!(
+            read_first_user_prompt_title(&rollout_path),
+            Some("session 상단에 검색 기능 추가해주고, 첫 유저 프롬프트를 보여줘".to_string())
+        );
+
+        fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
+    }
+
+    #[test]
+    fn metadata_prompt_detection_matches_known_wrappers() {
+        assert!(is_metadata_prompt("# AGENTS.md instructions for /tmp/repo"));
+        assert!(is_metadata_prompt(
+            "<environment_context> cwd=/tmp </environment_context>"
+        ));
+        assert!(is_metadata_prompt(
+            "<turn_aborted> interrupted </turn_aborted>"
+        ));
+        assert!(!is_metadata_prompt("실제 사용자 요청입니다"));
+    }
+
+    #[test]
+    fn title_normalization_collapses_whitespace() {
+        assert_eq!(
+            normalize_title_whitespace("first line\n\n second\tline"),
+            "first line second line".to_string()
+        );
+    }
+
+    #[test]
+    fn title_normalization_removes_image_attachment_markers() {
+        assert_eq!(
+            normalize_title_whitespace(
+                r#"<image name=[Image #1] path="/var/folders/tmp/codex-clipboard.png">
+세션 제목 파싱할 때 이런 이미지 제거하게 해줘"#,
+            ),
+            "세션 제목 파싱할 때 이런 이미지 제거하게 해줘".to_string()
+        );
+    }
+
+    #[test]
+    fn skips_image_only_prompt_for_session_title() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "coding-agent-va-image-title-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("create temp directory");
+
+        let rollout_path = temp_dir.join("rollout-test.jsonl");
+        let mut file = File::create(&rollout_path).expect("create rollout file");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{
+                        "type": "input_text",
+                        "text": r#"<image name=[Image #1] path="/var/folders/tmp/codex-clipboard.png">"#
+                    }]
+                }
+            })
+        )
+        .expect("write image row");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "실제 사용자 요청입니다" }]
+                }
+            })
+        )
+        .expect("write real prompt row");
+
+        assert_eq!(
+            read_first_user_prompt_title(&rollout_path),
+            Some("실제 사용자 요청입니다".to_string())
+        );
+
+        fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
+    }
+
+    #[test]
+    fn extracts_read_edited_and_deleted_files_from_rollout() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "coding-agent-va-file-activity-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(temp_dir.join("src")).expect("create src directory");
+
+        let read_path = temp_dir.join("src/App.tsx");
+        let edited_path = temp_dir.join("src/index.css");
+        let deleted_path = temp_dir.join("src/old.ts");
+        fs::write(&read_path, "read").expect("write read file");
+        fs::write(&edited_path, "edit").expect("write edited file");
+
+        let rollout_path = temp_dir.join("rollout-test.jsonl");
+        let mut file = File::create(&rollout_path).expect("create rollout file");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "timestamp": "2026-07-04T06:12:00.000Z",
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": serde_json::json!({
+                        "cmd": "sed -n '1,220p' src/App.tsx",
+                        "workdir": temp_dir.display().to_string()
+                    }).to_string()
+                }
+            })
+        )
+        .expect("write read activity");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "timestamp": "2026-07-04T06:12:10.000Z",
+                    "type": "patch_apply_end",
+                    "changes": {
+                        edited_path.display().to_string(): { "type": "update" },
+                        deleted_path.display().to_string(): { "type": "delete" }
+                    }
+                }
+            })
+        )
+        .expect("write patch activity");
+
+        let activity = read_codex_session_file_activity(
+            &rollout_path,
+            Some(temp_dir.to_str().expect("utf8 temp dir")),
+        )
+        .expect("read file activity");
+
+        assert_eq!(
+            activity.read_files,
+            vec![read_path
+                .canonicalize()
+                .expect("canonical read path")
+                .display()
+                .to_string()]
+        );
+        assert_eq!(
+            activity.edited_files,
+            vec![edited_path.display().to_string()]
+        );
+        assert_eq!(
+            activity.deleted_files,
+            vec![deleted_path.display().to_string()]
+        );
+
+        fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
     }
 }

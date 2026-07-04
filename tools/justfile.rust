@@ -1,4 +1,7 @@
 rust_manifest := "src-tauri/Cargo.toml"
+set dotenv-load := true
+
+export RUST_BACKTRACE := "1"
 
 prepare-rust:
   cargo fetch --manifest-path {{rust_manifest}}
