@@ -152,10 +152,22 @@
 
   body {
     @apply bg-background text-foreground;
+    overscroll-behavior: none;
     overflow-y: overlay;
   }
   html {
     @apply font-sans;
+    overscroll-behavior: none;
     overflow-y: overlay;
+  }
+}
+
+@layer components {
+  .app-window-titlebar {
+    app-region: drag;
+  }
+
+  .app-window-titlebar [data-window-control-exclusion] {
+    app-region: no-drag;
   }
 }

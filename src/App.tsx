@@ -54,27 +54,42 @@ type ActivitySection = {
 
 const ACTIVE_SESSION_WINDOW_MS = 60 * 1000;
 
-function startWindowDrag(event: React.MouseEvent<HTMLDivElement>) {
-  if (event.button !== 0 || event.detail > 1) {
-    return;
-  }
-
-  try {
-    void getCurrentWindow().startDragging();
-  } catch {
-    // Ignore window dragging in plain browser mode.
-  }
+function isWindowControlExcluded(target: EventTarget | null) {
+  return target instanceof Element
+    ? target.closest(
+        [
+          "[data-window-control-exclusion]",
+          "a",
+          "button",
+          "input",
+          "select",
+          "textarea",
+          "[role='button']",
+          "[role='menu']",
+          "[role='menuitem']",
+        ].join(",")
+      ) !== null
+    : false;
 }
 
-function toggleWindowMaximize(event: React.MouseEvent<HTMLDivElement>) {
-  if (event.button !== 0) {
+function handleTitlebarMouseDown(event: React.MouseEvent<HTMLElement>) {
+  if (event.button !== 0 || isWindowControlExcluded(event.target)) {
     return;
   }
 
   try {
-    void getCurrentWindow().toggleMaximize();
+    const appWindow = getCurrentWindow();
+
+    if (event.detail === 2) {
+      void appWindow.toggleMaximize();
+      return;
+    }
+
+    if (event.detail === 1) {
+      void appWindow.startDragging();
+    }
   } catch {
-    // Ignore maximize in plain browser mode.
+    // Ignore titlebar behavior in plain browser mode.
   }
 }
 
@@ -139,9 +154,15 @@ function SessionDropdown({
         <DropdownMenuSeparator />
         {visibleSessions.map((session) => {
           const isActive = nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
+          const isSelected = session.id === selectedSessionId;
 
           return (
-            <DropdownMenuItem key={session.id} onSelect={() => setSelectedSessionId(session.id)}>
+            <DropdownMenuItem
+              key={session.id}
+              onSelect={() => setSelectedSessionId(session.id)}
+              className={
+                isSelected ? "bg-accent/70 border-border/70 border" : "border border-transparent"
+              }>
               <div className="flex min-w-0 flex-1 items-start gap-2">
                 <span
                   className={
@@ -157,11 +178,6 @@ function SessionDropdown({
                   </span>
                 </div>
               </div>
-              {session.id === selectedSessionId ? (
-                <span className="bg-primary/12 text-primary rounded px-1.5 py-0.5 text-[10px] font-medium">
-                  Selected
-                </span>
-              ) : null}
             </DropdownMenuItem>
           );
         })}
@@ -373,32 +389,30 @@ function App() {
 
   return (
     <div className="bg-background text-foreground relative min-h-screen">
-      <div
+      <header
         data-tauri-drag-region
-        onDoubleClick={toggleWindowMaximize}
-        onMouseDown={startWindowDrag}
-        className="absolute inset-x-0 top-0 z-10 h-10 select-none"
-        aria-hidden="true"
-      />
-      <header className="border-border/80 bg-background/90 sticky top-0 z-20 border-b backdrop-blur">
+        onMouseDown={handleTitlebarMouseDown}
+        className="app-window-titlebar border-border/80 bg-background/90 fixed inset-x-0 top-0 z-20 border-b backdrop-blur">
         <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-foreground truncate text-sm font-semibold tracking-tight">
               Codex Visualization
             </p>
           </div>
-          <SessionDropdown
-            nowMs={nowMs}
-            searchQuery={searchQuery}
-            selectedSessionId={selectedSessionId}
-            selectedSessionLabel={selectedSessionLabel}
-            sessions={sessions}
-            setSearchQuery={setSearchQuery}
-            setSelectedSessionId={setSelectedSessionId}
-          />
+          <div data-window-control-exclusion>
+            <SessionDropdown
+              nowMs={nowMs}
+              searchQuery={searchQuery}
+              selectedSessionId={selectedSessionId}
+              selectedSessionLabel={selectedSessionLabel}
+              sessions={sessions}
+              setSearchQuery={setSearchQuery}
+              setSelectedSessionId={setSelectedSessionId}
+            />
+          </div>
         </div>
       </header>
-      <main className="px-6 py-6">
+      <main className="px-6 pt-20 pb-6">
         <Card className="mx-auto w-full max-w-6xl shadow-sm">
           <CardHeader>
             <CardTitle>{selectedSessionLabel}</CardTitle>
