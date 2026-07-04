@@ -18,6 +18,9 @@ prepare:
   @just prepare-node
   @just prepare-rust
 
+dev:
+  @just dev-rust
+
 [parallel]
 format:
   @just format-ts

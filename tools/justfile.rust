@@ -4,7 +4,7 @@ prepare-rust:
   cargo fetch --manifest-path {{rust_manifest}}
 
 dev-rust:
-  cargo run --manifest-path {{rust_manifest}}
+  (cd app && ./node_modules/.bin/tauri dev)
 
 format-rust:
   cargo fmt --all --manifest-path {{rust_manifest}}
