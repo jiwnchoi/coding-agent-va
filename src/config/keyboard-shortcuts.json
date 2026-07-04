@@ -1,5 +1,65 @@
 [
   {
+    "id": "select-session-tab-1",
+    "key": "1",
+    "metaKey": true,
+    "action": "selectSessionTab1"
+  },
+  {
+    "id": "select-session-tab-2",
+    "key": "2",
+    "metaKey": true,
+    "action": "selectSessionTab2"
+  },
+  {
+    "id": "select-session-tab-3",
+    "key": "3",
+    "metaKey": true,
+    "action": "selectSessionTab3"
+  },
+  {
+    "id": "select-session-tab-4",
+    "key": "4",
+    "metaKey": true,
+    "action": "selectSessionTab4"
+  },
+  {
+    "id": "select-session-tab-5",
+    "key": "5",
+    "metaKey": true,
+    "action": "selectSessionTab5"
+  },
+  {
+    "id": "select-session-tab-6",
+    "key": "6",
+    "metaKey": true,
+    "action": "selectSessionTab6"
+  },
+  {
+    "id": "select-session-tab-7",
+    "key": "7",
+    "metaKey": true,
+    "action": "selectSessionTab7"
+  },
+  {
+    "id": "select-session-tab-8",
+    "key": "8",
+    "metaKey": true,
+    "action": "selectSessionTab8"
+  },
+  {
+    "id": "select-session-tab-9",
+    "key": "9",
+    "metaKey": true,
+    "action": "selectSessionTab9"
+  },
+  {
+    "id": "select-session-tab-0",
+    "key": "0",
+    "metaKey": true,
+    "action": "selectSessionTab0"
+  },
+  {
     "id": "next-session-tab",
     "key": "Tab",
     "ctrlKey": true,

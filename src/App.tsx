@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChevronDown, Eye, FilePenLine, Search, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Search, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { FileDiffViewer } from "@/components/file-diff-viewer";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,37 +29,18 @@ import {
   type KeyboardShortcutConfig,
   useKeyboardShortcuts,
 } from "@/lib/keyboard-shortcuts";
+import {
+  buildActivitySections,
+  type ActivitySection,
+  type CodexSessionList,
+  type CodexSessionSummary,
+  type SelectedActivityFile,
+  type SessionWatchRegistration,
+} from "@/lib/session-watch";
+import { useEditorTheme } from "@/lib/useEditorTheme";
+import { useSessionFileActivity } from "@/lib/useSessionFileActivity";
+import { useSessionFileDiff } from "@/lib/useSessionFileDiff";
 import { cn } from "@/lib/utils";
-
-type CodexSessionSummary = {
-  id: string;
-  title: string;
-  rolloutPath: string;
-  cwd: string | null;
-  updatedAtMs: number;
-};
-
-type CodexSessionList = {
-  runtimeHome: string;
-  sessions: CodexSessionSummary[];
-};
-
-type SessionWatchRegistration = {
-  watchId: string;
-};
-
-type CodexSessionFileActivity = {
-  readFiles: string[];
-  editedFiles: string[];
-  deletedFiles: string[];
-};
-
-type ActivitySection = {
-  key: string;
-  title: string;
-  icon: typeof Eye;
-  files: string[];
-};
 
 const ACTIVE_SESSION_WINDOW_MS = 60 * 1000;
 const APP_SHORTCUTS = keyboardShortcutConfig as KeyboardShortcutConfig[];
@@ -139,6 +121,12 @@ function selectMostRecentlyActiveSession(
   );
 
   return nextSessionId ?? selectedSessionId;
+}
+
+function selectSessionByTabNumber(openSessionIds: string[], tabNumber: number) {
+  const sessionIndex = tabNumber === 0 ? 9 : tabNumber - 1;
+
+  return openSessionIds[sessionIndex] ?? "";
 }
 
 function reconcileTabState({
@@ -230,14 +218,6 @@ function handleTitlebarMouseDown(event: React.MouseEvent<HTMLElement>) {
   } catch {
     // Ignore titlebar behavior in plain browser mode.
   }
-}
-
-function buildActivitySections(fileActivity: CodexSessionFileActivity): ActivitySection[] {
-  return [
-    { key: "read", title: "Read", icon: Eye, files: fileActivity.readFiles },
-    { key: "edited", title: "Edited", icon: FilePenLine, files: fileActivity.editedFiles },
-    { key: "deleted", title: "Deleted", icon: Trash2, files: fileActivity.deletedFiles },
-  ];
 }
 
 function SessionPickerDropdown({
@@ -383,9 +363,13 @@ function SessionTabBar({
 function FileActivityPanels({
   isLoading,
   sections,
+  selectedFilePath,
+  onSelectFile,
 }: {
   isLoading: boolean;
   sections: ActivitySection[];
+  selectedFilePath: string;
+  onSelectFile: (selection: SelectedActivityFile) => void;
 }) {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -403,10 +387,17 @@ function FileActivityPanels({
             </div>
             <div className="space-y-2">
               {section.files.slice(0, 12).map((filePath) => (
-                <div key={filePath} className="bg-background rounded-md border px-3 py-2 text-sm">
+                <button
+                  key={filePath}
+                  type="button"
+                  onClick={() => onSelectFile({ filePath })}
+                  className={cn(
+                    "bg-background hover:bg-muted/60 w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    selectedFilePath === filePath && "border-foreground/20 bg-muted/80"
+                  )}>
                   <p className="truncate font-medium">{filePath.split("/").pop() ?? filePath}</p>
                   <p className="text-muted-foreground truncate text-xs">{filePath}</p>
-                </div>
+                </button>
               ))}
               {section.files.length === 0 && !isLoading ? (
                 <p className="text-muted-foreground text-sm">No files</p>
@@ -419,6 +410,31 @@ function FileActivityPanels({
         );
       })}
     </div>
+  );
+}
+
+function buildTabNumberShortcutActions(
+  handleSelectSession: (sessionId: string) => void,
+  openSessionIdsRef: React.RefObject<string[]>
+): Record<string, KeyboardShortcut["handler"]> {
+  return Object.fromEntries(
+    Array.from({ length: 10 }, (_, index) => {
+      const tabNumber = (index + 1) % 10;
+      const actionName = `selectSessionTab${tabNumber}`;
+
+      return [
+        actionName,
+        () => {
+          const sessionId = selectSessionByTabNumber(openSessionIdsRef.current, tabNumber);
+
+          if (!sessionId) {
+            return;
+          }
+
+          handleSelectSession(sessionId);
+        },
+      ];
+    })
   );
 }
 
@@ -474,51 +490,62 @@ function useSessionState() {
     sessionHistoryIdsRef.current = sessionHistoryIds;
   }, [sessionHistoryIds]);
 
-  function setSelectedSessionWithHistory(nextSessionId: string) {
+  const setSelectedSessionWithHistory = useCallback((nextSessionId: string) => {
     const previousSessionId = selectedSessionIdRef.current;
 
     setSessionHistoryIds((currentHistorySessionIds) =>
       updateSessionHistory(currentHistorySessionIds, previousSessionId, nextSessionId)
     );
     setSelectedSessionId(nextSessionId);
-  }
+  }, []);
 
-  function selectSession(sessionId: string) {
-    setDismissedSessionIds((currentDismissedSessionIds) =>
-      currentDismissedSessionIds.filter((dismissedSessionId) => dismissedSessionId !== sessionId)
-    );
-    setOpenSessionIds((currentOpenSessionIds) => {
-      if (currentOpenSessionIds.includes(sessionId)) {
-        return currentOpenSessionIds;
-      }
+  const selectSession = useCallback(
+    (sessionId: string) => {
+      setDismissedSessionIds((currentDismissedSessionIds) =>
+        currentDismissedSessionIds.filter((dismissedSessionId) => dismissedSessionId !== sessionId)
+      );
+      setOpenSessionIds((currentOpenSessionIds) => {
+        if (currentOpenSessionIds.includes(sessionId)) {
+          return currentOpenSessionIds;
+        }
 
-      return [...currentOpenSessionIds, sessionId];
-    });
-    setSelectedSessionWithHistory(sessionId);
-  }
+        return [...currentOpenSessionIds, sessionId];
+      });
+      setSelectedSessionWithHistory(sessionId);
+    },
+    [setSelectedSessionWithHistory]
+  );
 
-  function handleCloseSession(sessionId: string) {
-    const { nextOpenSessionIds, nextSelectedSessionId } = closeSessionTab(
-      openSessionIdsRef.current,
-      sessionId,
-      selectedSessionIdRef.current
-    );
+  const handleCloseSession = useCallback(
+    (sessionId: string) => {
+      const { nextOpenSessionIds, nextSelectedSessionId } = closeSessionTab(
+        openSessionIdsRef.current,
+        sessionId,
+        selectedSessionIdRef.current
+      );
 
-    setOpenSessionIds(nextOpenSessionIds);
-    setSelectedSessionWithHistory(nextSelectedSessionId);
-    setSessionHistoryIds((currentHistorySessionIds) =>
-      currentHistorySessionIds.filter((historySessionId) => historySessionId !== sessionId)
-    );
-    setDismissedSessionIds((currentDismissedSessionIds) =>
-      currentDismissedSessionIds.includes(sessionId)
-        ? currentDismissedSessionIds
-        : [...currentDismissedSessionIds, sessionId]
-    );
-  }
+      setOpenSessionIds(nextOpenSessionIds);
+      setSelectedSessionWithHistory(nextSelectedSessionId);
+      setSessionHistoryIds((currentHistorySessionIds) =>
+        currentHistorySessionIds.filter((historySessionId) => historySessionId !== sessionId)
+      );
+      setDismissedSessionIds((currentDismissedSessionIds) =>
+        currentDismissedSessionIds.includes(sessionId)
+          ? currentDismissedSessionIds
+          : [...currentDismissedSessionIds, sessionId]
+      );
+    },
+    [setSelectedSessionWithHistory]
+  );
 
-  function reconcileSessions(nextSessions: CodexSessionSummary[], currentNowMs: number) {
-    const { activeSessionIds, nextDismissedSessionIds, nextOpenSessionIds, nextSelectedSessionId } =
-      reconcileTabState({
+  const reconcileSessions = useCallback(
+    (nextSessions: CodexSessionSummary[], currentNowMs: number) => {
+      const {
+        activeSessionIds,
+        nextDismissedSessionIds,
+        nextOpenSessionIds,
+        nextSelectedSessionId,
+      } = reconcileTabState({
         currentDismissedSessionIds: dismissedSessionIdsRef.current,
         currentOpenSessionIds: openSessionIdsRef.current,
         currentSelectedSessionId: selectedSessionIdRef.current,
@@ -527,19 +554,21 @@ function useSessionState() {
         sessions: nextSessions,
       });
 
-    setSessions(nextSessions);
-    setDismissedSessionIds(nextDismissedSessionIds);
-    setOpenSessionIds(nextOpenSessionIds);
-    setSessionHistoryIds((currentHistorySessionIds) =>
-      currentHistorySessionIds.filter(
-        (sessionId) =>
-          nextOpenSessionIds.includes(sessionId) &&
-          nextSessions.some((session) => session.id === sessionId)
-      )
-    );
-    setSelectedSessionWithHistory(nextSelectedSessionId);
-    activeSessionIdsRef.current = activeSessionIds;
-  }
+      setSessions(nextSessions);
+      setDismissedSessionIds(nextDismissedSessionIds);
+      setOpenSessionIds(nextOpenSessionIds);
+      setSessionHistoryIds((currentHistorySessionIds) =>
+        currentHistorySessionIds.filter(
+          (sessionId) =>
+            nextOpenSessionIds.includes(sessionId) &&
+            nextSessions.some((session) => session.id === sessionId)
+        )
+      );
+      setSelectedSessionWithHistory(nextSelectedSessionId);
+      activeSessionIdsRef.current = activeSessionIds;
+    },
+    [setSelectedSessionWithHistory]
+  );
 
   return {
     sessions,
@@ -574,16 +603,20 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
-  const [fileActivity, setFileActivity] = useState<CodexSessionFileActivity>({
-    readFiles: [],
-    editedFiles: [],
-    deletedFiles: [],
-  });
-  const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
+  const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
+    null
+  );
+  const editorTheme = useEditorTheme();
   const openSessions = openSessionIds
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
     .filter((session): session is CodexSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const { fileActivity, isFileActivityLoading } = useSessionFileActivity(
+    selectedSession,
+    fileActivityRefreshVersion
+  );
+  const { selectedFileDiff, isFileDiffLoading, fileDiffErrorMessage, clearSelectedFileDiffState } =
+    useSessionFileDiff(selectedSession, selectedActivityFile);
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
   const activitySections = buildActivitySections(fileActivity);
@@ -591,9 +624,23 @@ function App() {
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     setSearchQuery("");
+    setSelectedActivityFile(null);
+    clearSelectedFileDiffState();
+  }
+
+  function handleSelectActivityFile(selection: SelectedActivityFile) {
+    if (selectedActivityFile?.filePath === selection.filePath) {
+      setSelectedActivityFile(null);
+      clearSelectedFileDiffState();
+      return;
+    }
+
+    setSelectedActivityFile(selection);
+    clearSelectedFileDiffState();
   }
 
   const shortcutActions: Record<string, KeyboardShortcut["handler"]> = {
+    ...buildTabNumberShortcutActions(handleSelectSession, openSessionIdsRef),
     selectNextSessionTab: () => {
       handleSelectSession(
         rotateSession(openSessionIdsRef.current, selectedSessionIdRef.current, 1)
@@ -645,7 +692,7 @@ function App() {
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [reconcileSessions]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -658,7 +705,7 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [reconcileSessions, sessionsRef]);
 
   useEffect(() => {
     if (!runtimeHome) {
@@ -717,44 +764,11 @@ function App() {
       disposed = true;
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [runtimeHome, watchId]);
-
-  useEffect(() => {
-    if (!selectedSession) {
-      setFileActivity({ readFiles: [], editedFiles: [], deletedFiles: [] });
-      return;
-    }
-
-    const currentSession = selectedSession;
-    let disposed = false;
-
-    async function loadFileActivity() {
-      setIsFileActivityLoading(true);
-
-      try {
-        const result = await invoke<CodexSessionFileActivity>("get_codex_session_file_activity", {
-          rolloutPath: currentSession.rolloutPath,
-          cwd: currentSession.cwd,
-        });
-
-        if (!disposed) {
-          setFileActivity(result);
-        }
-      } finally {
-        if (!disposed) {
-          setIsFileActivityLoading(false);
-        }
-      }
-    }
-
-    void loadFileActivity();
-
-    return () => {
-      disposed = true;
-    };
-  }, [fileActivityRefreshVersion, selectedSession]);
+  }, [reconcileSessions, runtimeHome, watchId]);
 
   useKeyboardShortcuts(shortcuts);
+
+  const isDiffViewerOpen = selectedActivityFile !== null;
 
   return (
     <div className="bg-background text-foreground relative min-h-screen">
@@ -784,27 +798,50 @@ function App() {
         </div>
       </header>
       <main className="px-6 pt-12 pb-6">
-        <Card className="mx-auto w-full max-w-6xl shadow-sm">
-          <CardHeader>
-            <CardTitle>{selectedSessionLabel}</CardTitle>
-            <CardDescription>현재 선택된 Codex Session의 파일 활동입니다.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
-              <span>runtime home: {runtimeHome || "~/.codex"}</span>
-              <span>workspace: {selectedSession?.cwd ?? "Unknown"}</span>
+        <div
+          data-diff-open={isDiffViewerOpen}
+          className="app-main-panels mx-auto flex w-full max-w-[96rem] flex-col gap-6 xl:flex-row">
+          <Card className="app-main-panel w-full shadow-sm">
+            <CardHeader>
+              <CardTitle>{selectedSessionLabel}</CardTitle>
+              <CardDescription>현재 선택된 Codex Session의 파일 활동입니다.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
+                <span>runtime home: {runtimeHome || "~/.codex"}</span>
+                <span>workspace: {selectedSession?.cwd ?? "Unknown"}</span>
+              </div>
+              <FileActivityPanels
+                isLoading={isFileActivityLoading}
+                sections={activitySections}
+                selectedFilePath={selectedActivityFile?.filePath ?? ""}
+                onSelectFile={handleSelectActivityFile}
+              />
+            </CardContent>
+            <CardFooter className="text-muted-foreground justify-between text-sm">
+              <span>
+                Read, edited, and deleted files are extracted from the selected session rollout.
+              </span>
+              <span>
+                {selectedSession ? new Date(selectedSession.updatedAtMs).toLocaleTimeString() : ""}
+              </span>
+            </CardFooter>
+          </Card>
+          {isDiffViewerOpen ? (
+            <div className="app-diff-panel">
+              <FileDiffViewer
+                diff={selectedFileDiff}
+                isLoading={isFileDiffLoading}
+                errorMessage={fileDiffErrorMessage}
+                onClose={() => {
+                  setSelectedActivityFile(null);
+                  clearSelectedFileDiffState();
+                }}
+                theme={editorTheme}
+              />
             </div>
-            <FileActivityPanels isLoading={isFileActivityLoading} sections={activitySections} />
-          </CardContent>
-          <CardFooter className="text-muted-foreground justify-between text-sm">
-            <span>
-              Read, edited, and deleted files are extracted from the selected session rollout.
-            </span>
-            <span>
-              {selectedSession ? new Date(selectedSession.updatedAtMs).toLocaleTimeString() : ""}
-            </span>
-          </CardFooter>
-        </Card>
+          ) : null}
+        </div>
       </main>
     </div>
   );

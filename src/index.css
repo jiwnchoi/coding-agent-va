@@ -171,4 +171,61 @@
   .app-window-titlebar [data-window-control-exclusion] {
     app-region: no-drag;
   }
+
+  .app-main-panels {
+    transition:
+      max-width 220ms ease,
+      gap 220ms ease;
+  }
+
+  .app-main-panel {
+    min-width: 0;
+    transition:
+      flex-basis 220ms ease,
+      max-width 220ms ease;
+  }
+
+  .app-diff-panel {
+    min-width: 0;
+    display: flex;
+    width: 100%;
+    opacity: 0;
+    animation: app-diff-panel-fade-in 180ms ease forwards;
+  }
+
+  .app-diff-panel > section {
+    flex: 1 1 auto;
+    min-height: 100%;
+  }
+
+  @media (min-width: 1280px) {
+    .app-main-panels[data-diff-open="false"] {
+      max-width: 72rem;
+    }
+
+    .app-main-panels[data-diff-open="true"] .app-main-panel {
+      flex: 0 1 calc(50% - 0.75rem);
+      max-width: calc(50% - 0.75rem);
+    }
+
+    .app-main-panels[data-diff-open="true"] .app-diff-panel {
+      flex: 0 1 calc(50% - 0.75rem);
+      max-width: calc(50% - 0.75rem);
+    }
+
+    .app-main-panels[data-diff-open="false"] .app-main-panel {
+      flex: 1 1 100%;
+      max-width: 100%;
+    }
+  }
+
+  @keyframes app-diff-panel-fade-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
 }

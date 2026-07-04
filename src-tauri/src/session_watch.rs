@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
-use std::fs::File;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
@@ -71,6 +72,19 @@ pub struct CodexSessionFileActivity {
     pub read_files: Vec<String>,
     pub edited_files: Vec<String>,
     pub deleted_files: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionFileDiff {
+    pub file_path: String,
+    pub display_path: String,
+    pub original_content: String,
+    pub modified_content: String,
+    pub diff_base_label: String,
+    pub diff_target_label: String,
+    pub file_missing: bool,
+    pub is_tracked: bool,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +193,14 @@ pub fn get_codex_session_file_activity(
     cwd: Option<String>,
 ) -> Result<CodexSessionFileActivity, String> {
     read_codex_session_file_activity(&PathBuf::from(rollout_path), cwd.as_deref())
+}
+
+#[tauri::command]
+pub fn get_codex_session_file_diff(
+    file_path: String,
+    cwd: Option<String>,
+) -> Result<CodexSessionFileDiff, String> {
+    read_codex_session_file_diff(&PathBuf::from(file_path), cwd.as_deref())
 }
 
 #[tauri::command]
@@ -456,10 +478,59 @@ fn read_codex_session_file_activity(
         }
     }
 
+    filter_written_files_by_git_status(cwd, &mut edited_files, &mut deleted_files);
+
     Ok(CodexSessionFileActivity {
         read_files: sort_file_activity(read_files),
         edited_files: sort_file_activity(edited_files),
         deleted_files: sort_file_activity(deleted_files),
+    })
+}
+
+fn read_codex_session_file_diff(
+    file_path: &Path,
+    cwd: Option<&str>,
+) -> Result<CodexSessionFileDiff, String> {
+    let absolute_file_path = if file_path.is_absolute() {
+        file_path.to_path_buf()
+    } else {
+        let workspace_root = cwd
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("relative file path requires cwd: {}", file_path.display()))?;
+        workspace_root.join(file_path)
+    };
+    let display_path = cwd
+        .and_then(|workspace_root| {
+            absolute_file_path
+                .strip_prefix(workspace_root)
+                .ok()
+                .map(|relative_path| relative_path.display().to_string())
+        })
+        .unwrap_or_else(|| absolute_file_path.display().to_string());
+    let modified_content = fs::read_to_string(&absolute_file_path).unwrap_or_default();
+    let file_missing = !absolute_file_path.is_file();
+    let git_snapshot = read_git_head_snapshot(&absolute_file_path, cwd);
+    let (original_content, is_tracked) = match git_snapshot {
+        Some(content) => (content, true),
+        None if file_missing => (String::new(), false),
+        None => (modified_content.clone(), false),
+    };
+
+    Ok(CodexSessionFileDiff {
+        file_path: absolute_file_path.display().to_string(),
+        display_path,
+        original_content,
+        modified_content,
+        diff_base_label: "HEAD".to_string(),
+        diff_target_label: if file_missing {
+            "Deleted".to_string()
+        } else if is_tracked {
+            "Working tree".to_string()
+        } else {
+            "Workspace".to_string()
+        },
+        file_missing,
+        is_tracked,
     })
 }
 
@@ -589,6 +660,153 @@ fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> {
     let mut entries = activity.into_iter().collect::<Vec<_>>();
     entries.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     entries.into_iter().map(|(path, _)| path).collect()
+}
+
+fn filter_written_files_by_git_status(
+    cwd: Option<&str>,
+    edited_files: &mut HashMap<String, u64>,
+    deleted_files: &mut HashMap<String, u64>,
+) {
+    let Some(git_status) = cwd.and_then(read_git_worktree_status) else {
+        return;
+    };
+
+    edited_files.retain(|path, _| {
+        normalize_written_activity_path(path, cwd)
+            .is_some_and(|normalized_path| git_status.edited_files.contains(&normalized_path))
+    });
+    deleted_files.retain(|path, _| {
+        normalize_written_activity_path(path, cwd)
+            .is_some_and(|normalized_path| git_status.deleted_files.contains(&normalized_path))
+    });
+}
+
+#[derive(Default)]
+struct GitWorktreeStatus {
+    edited_files: HashSet<String>,
+    deleted_files: HashSet<String>,
+}
+
+fn read_git_worktree_status(cwd: &str) -> Option<GitWorktreeStatus> {
+    let repo_root = resolve_git_repo_root_from_path(Path::new(cwd))?;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("status")
+        .arg("--porcelain=v1")
+        .arg("-z")
+        .arg("--untracked-files=all")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let mut status = GitWorktreeStatus::default();
+    let mut entries = output.stdout.split(|byte| *byte == 0);
+    while let Some(entry) = entries.next() {
+        if entry.len() < 4 {
+            continue;
+        }
+
+        let index_status = entry[0] as char;
+        let worktree_status = entry[1] as char;
+        let path = String::from_utf8_lossy(&entry[3..]).to_string();
+        if path.is_empty() {
+            continue;
+        }
+
+        if matches!(index_status, 'R' | 'C') {
+            let _ = entries.next();
+        }
+
+        let absolute_path = normalize_absolute_activity_path(&repo_root.join(path));
+        if index_status == 'D' || worktree_status == 'D' {
+            status.deleted_files.insert(absolute_path);
+        } else {
+            status.edited_files.insert(absolute_path);
+        }
+    }
+
+    Some(status)
+}
+
+fn normalize_written_activity_path(path: &str, cwd: Option<&str>) -> Option<String> {
+    let path = Path::new(path);
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        let cwd = PathBuf::from(cwd?);
+        cwd.canonicalize().unwrap_or(cwd).join(path)
+    };
+
+    Some(normalize_absolute_activity_path(&absolute_path))
+}
+
+fn normalize_absolute_activity_path(path: &Path) -> String {
+    if let Ok(canonical_path) = path.canonicalize() {
+        return canonical_path.display().to_string();
+    }
+
+    path.parent()
+        .and_then(|parent| {
+            let canonical_parent = parent.canonicalize().ok()?;
+            let file_name = path.file_name()?;
+            Some(canonical_parent.join(file_name).display().to_string())
+        })
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn read_git_head_snapshot(file_path: &Path, cwd: Option<&str>) -> Option<String> {
+    let repo_root = resolve_git_repo_root(file_path, cwd)?;
+    let relative_path = file_path.strip_prefix(&repo_root).ok()?;
+    let git_object_path = relative_path.to_string_lossy().replace('\\', "/");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_root)
+        .arg("show")
+        .arg(format!("HEAD:{git_object_path}"))
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout).ok()
+}
+
+fn resolve_git_repo_root(file_path: &Path, cwd: Option<&str>) -> Option<PathBuf> {
+    let search_root = if file_path.is_file() {
+        file_path.parent().map(Path::to_path_buf)
+    } else {
+        Some(file_path.to_path_buf())
+    }
+    .or_else(|| cwd.map(PathBuf::from))?;
+    resolve_git_repo_root_from_path(&search_root)
+}
+
+fn resolve_git_repo_root_from_path(search_root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(search_root)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let repo_root = String::from_utf8(output.stdout).ok()?;
+    let trimmed = repo_root.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(PathBuf::from(trimmed))
 }
 
 fn normalize_title_whitespace(text: impl AsRef<str>) -> String {
@@ -802,6 +1020,7 @@ mod tests {
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;
+    use std::process::Command;
 
     #[test]
     fn session_artifact_filter_matches_expected_paths() {
@@ -1090,5 +1309,87 @@ mod tests {
         );
 
         fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
+    }
+
+    #[test]
+    fn filters_edited_and_deleted_files_to_git_status_intersection() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "coding-agent-va-git-activity-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(temp_dir.join("src")).expect("create src directory");
+
+        let edited_path = temp_dir.join("src/changed.ts");
+        let stale_edited_path = temp_dir.join("src/stale.ts");
+        let deleted_path = temp_dir.join("src/deleted.ts");
+        let stale_deleted_path = temp_dir.join("src/not-deleted.ts");
+
+        for path in [
+            &edited_path,
+            &stale_edited_path,
+            &deleted_path,
+            &stale_deleted_path,
+        ] {
+            fs::write(path, "initial").expect("write initial file");
+        }
+
+        run_git(&temp_dir, &["init"]);
+        run_git(&temp_dir, &["config", "user.email", "codex@example.com"]);
+        run_git(&temp_dir, &["config", "user.name", "Codex"]);
+        run_git(&temp_dir, &["add", "."]);
+        run_git(&temp_dir, &["commit", "-m", "initial"]);
+
+        fs::write(&edited_path, "changed").expect("modify edited file");
+        fs::remove_file(&deleted_path).expect("delete tracked file");
+
+        let rollout_path = temp_dir.join("rollout-test.jsonl");
+        let mut file = File::create(&rollout_path).expect("create rollout file");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "timestamp": "2026-07-04T06:12:10.000Z",
+                    "type": "patch_apply_end",
+                    "changes": {
+                        "src/changed.ts": { "type": "update" },
+                        "src/stale.ts": { "type": "update" },
+                        "src/deleted.ts": { "type": "delete" },
+                        "src/not-deleted.ts": { "type": "delete" }
+                    }
+                }
+            })
+        )
+        .expect("write patch activity");
+
+        let activity = read_codex_session_file_activity(
+            &rollout_path,
+            Some(temp_dir.to_str().expect("utf8 temp dir")),
+        )
+        .expect("read file activity");
+
+        assert_eq!(activity.edited_files, vec!["src/changed.ts".to_string()]);
+        assert_eq!(activity.deleted_files, vec!["src/deleted.ts".to_string()]);
+
+        fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
+    }
+
+    fn run_git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(args)
+            .output()
+            .expect("run git command");
+
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
