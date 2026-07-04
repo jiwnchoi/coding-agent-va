@@ -267,7 +267,7 @@ function SessionPickerDropdown({
                   className={
                     isActive
                       ? "mt-1.5 size-2 shrink-0 rounded-full bg-green-500"
-                      : "bg-muted mt-1.5 size-2 shrink-0 rounded-full"
+                      : "mt-1.5 size-2 shrink-0 rounded-full bg-orange-500"
                   }
                 />
                 <div className="flex min-w-0 flex-1 flex-col">
@@ -322,7 +322,10 @@ function SessionTabBar({
                 isSelected && "bg-accent text-accent-foreground shadow-sm"
               )}>
               <span
-                className={cn("bg-muted size-2 shrink-0 rounded-full", isActive && "bg-green-500")}
+                className={cn(
+                  "size-2 shrink-0 rounded-full bg-orange-500",
+                  isActive && "bg-green-500"
+                )}
               />
               <span className="max-w-52 min-w-0 truncate text-sm font-medium">{session.title}</span>
               <button
@@ -415,6 +418,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
   const [fileActivity, setFileActivity] = useState<CodexSessionFileActivity>({
     readFiles: [],
     editedFiles: [],
@@ -597,6 +601,7 @@ function App() {
       }
 
       reconcileSessions(result.sessions, Date.now());
+      setFileActivityRefreshVersion((currentVersion) => currentVersion + 1);
     }
 
     const unlistenPromise = listen("codex-session-watch-event", async (event) => {
@@ -648,7 +653,7 @@ function App() {
     return () => {
       disposed = true;
     };
-  }, [selectedSession]);
+  }, [fileActivityRefreshVersion, selectedSession]);
 
   useKeyboardShortcuts(shortcuts);
 
