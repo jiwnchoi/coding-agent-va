@@ -1,0 +1,21 @@
+[
+  {
+    "id": "next-session-tab",
+    "key": "Tab",
+    "ctrlKey": true,
+    "action": "selectNextSessionTab"
+  },
+  {
+    "id": "previous-session-tab",
+    "key": "Tab",
+    "ctrlKey": true,
+    "shiftKey": true,
+    "action": "selectPreviousSessionTab"
+  },
+  {
+    "id": "close-selected-session-tab",
+    "key": "w",
+    "metaKey": true,
+    "action": "closeSelectedSessionTab"
+  }
+]

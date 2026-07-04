@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChevronDown, Eye, FilePenLine, Search, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, Eye, FilePenLine, Search, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,9 +18,17 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import keyboardShortcutConfig from "@/config/keyboard-shortcuts.json";
+import {
+  type KeyboardShortcut,
+  type KeyboardShortcutConfig,
+  useKeyboardShortcuts,
+} from "@/lib/keyboard-shortcuts";
+import { cn } from "@/lib/utils";
 
 type CodexSessionSummary = {
   id: string;
@@ -53,6 +61,104 @@ type ActivitySection = {
 };
 
 const ACTIVE_SESSION_WINDOW_MS = 60 * 1000;
+const APP_SHORTCUTS = keyboardShortcutConfig as KeyboardShortcutConfig[];
+
+function getActiveSessionIds(sessions: CodexSessionSummary[], nowMs: number) {
+  return sessions
+    .filter((session) => nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS)
+    .map((session) => session.id);
+}
+
+function rotateSession(openSessionIds: string[], selectedSessionId: string, direction: 1 | -1) {
+  if (openSessionIds.length <= 1) {
+    return selectedSessionId;
+  }
+
+  const currentIndex = openSessionIds.indexOf(selectedSessionId);
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (safeIndex + direction + openSessionIds.length) % openSessionIds.length;
+
+  return openSessionIds[nextIndex] ?? selectedSessionId;
+}
+
+function closeSessionTab(openSessionIds: string[], sessionId: string, selectedSessionId: string) {
+  const closedSessionIndex = openSessionIds.indexOf(sessionId);
+
+  if (closedSessionIndex < 0) {
+    return {
+      nextOpenSessionIds: openSessionIds,
+      nextSelectedSessionId: selectedSessionId,
+    };
+  }
+
+  const nextOpenSessionIds = openSessionIds.filter((openSessionId) => openSessionId !== sessionId);
+
+  if (sessionId !== selectedSessionId) {
+    return {
+      nextOpenSessionIds,
+      nextSelectedSessionId: selectedSessionId,
+    };
+  }
+
+  const fallbackIndex = Math.min(closedSessionIndex, nextOpenSessionIds.length - 1);
+
+  return {
+    nextOpenSessionIds,
+    nextSelectedSessionId: nextOpenSessionIds[fallbackIndex] ?? "",
+  };
+}
+
+function reconcileTabState({
+  currentDismissedSessionIds,
+  currentOpenSessionIds,
+  currentSelectedSessionId,
+  nowMs,
+  previousActiveSessionIds,
+  sessions,
+}: {
+  currentDismissedSessionIds: string[];
+  currentOpenSessionIds: string[];
+  currentSelectedSessionId: string;
+  nowMs: number;
+  previousActiveSessionIds: string[];
+  sessions: CodexSessionSummary[];
+}) {
+  const activeSessionIds = getActiveSessionIds(sessions, nowMs);
+  const previousActiveSessionIdSet = new Set(previousActiveSessionIds);
+  const availableSessionIdSet = new Set(sessions.map((session) => session.id));
+  const nextDismissedSessionIds = currentDismissedSessionIds.filter((sessionId) =>
+    availableSessionIdSet.has(sessionId)
+  );
+  const dismissedSessionIdSet = new Set(nextDismissedSessionIds);
+  const newlyActiveSessionIds = activeSessionIds.filter(
+    (sessionId) => !previousActiveSessionIdSet.has(sessionId)
+  );
+  const baseOpenSessionIds = currentOpenSessionIds.filter((sessionId) =>
+    availableSessionIdSet.has(sessionId)
+  );
+  const nextOpenSessionIds = [...baseOpenSessionIds];
+
+  for (const sessionId of activeSessionIds) {
+    if (newlyActiveSessionIds.includes(sessionId) || !dismissedSessionIdSet.has(sessionId)) {
+      if (!nextOpenSessionIds.includes(sessionId)) {
+        nextOpenSessionIds.push(sessionId);
+      }
+    }
+  }
+
+  const isSelectedSessionAvailable = availableSessionIdSet.has(currentSelectedSessionId);
+  const nextSelectedSessionId =
+    currentSelectedSessionId && isSelectedSessionAvailable
+      ? currentSelectedSessionId
+      : (nextOpenSessionIds[0] ?? (isSelectedSessionAvailable ? currentSelectedSessionId : ""));
+
+  return {
+    activeSessionIds,
+    nextDismissedSessionIds,
+    nextOpenSessionIds,
+    nextSelectedSessionId,
+  };
+}
 
 function isWindowControlExcluded(target: EventTarget | null) {
   return target instanceof Element
@@ -101,22 +207,18 @@ function buildActivitySections(fileActivity: CodexSessionFileActivity): Activity
   ];
 }
 
-function SessionDropdown({
+function SessionPickerDropdown({
   nowMs,
   searchQuery,
-  selectedSessionId,
-  selectedSessionLabel,
   sessions,
   setSearchQuery,
-  setSelectedSessionId,
+  onSelectSession,
 }: {
   nowMs: number;
   searchQuery: string;
-  selectedSessionId: string;
-  selectedSessionLabel: string;
   sessions: CodexSessionSummary[];
   setSearchQuery: (value: string) => void;
-  setSelectedSessionId: (value: string) => void;
+  onSelectSession: (sessionId: string) => void;
 }) {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredSessions = sessions.filter((session) => {
@@ -134,12 +236,12 @@ function SessionDropdown({
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="w-[min(32rem,60vw)] justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-left">{selectedSessionLabel}</span>
-          <ChevronDown className="size-4 opacity-60" />
+        <Button variant="outline" size="icon" className="rounded-md">
+          <ChevronDown className="size-4" />
+          <span className="sr-only">Search sessions</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
+      <DropdownMenuContent align="start" className="w-80">
         <div className="px-1 pb-1" onKeyDown={(event) => event.stopPropagation()}>
           <div className="relative">
             <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
@@ -154,15 +256,12 @@ function SessionDropdown({
         <DropdownMenuSeparator />
         {visibleSessions.map((session) => {
           const isActive = nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
-          const isSelected = session.id === selectedSessionId;
 
           return (
             <DropdownMenuItem
               key={session.id}
-              onSelect={() => setSelectedSessionId(session.id)}
-              className={
-                isSelected ? "bg-accent/70 border-border/70 border" : "border border-transparent"
-              }>
+              onSelect={() => onSelectSession(session.id)}
+              className="border border-transparent">
               <div className="flex min-w-0 flex-1 items-start gap-2">
                 <span
                   className={
@@ -178,6 +277,7 @@ function SessionDropdown({
                   </span>
                 </div>
               </div>
+              <DropdownMenuShortcut>{session.id.slice(0, 4)}</DropdownMenuShortcut>
             </DropdownMenuItem>
           );
         })}
@@ -189,6 +289,58 @@ function SessionDropdown({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function SessionTabBar({
+  nowMs,
+  openSessions,
+  selectedSessionId,
+  onCloseSession,
+  onSelectSession,
+}: {
+  nowMs: number;
+  openSessions: CodexSessionSummary[];
+  selectedSessionId: string;
+  onCloseSession: (sessionId: string) => void;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      <div className="flex min-w-0 flex-1 [scrollbar-width:none] items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+        {openSessions.map((session) => {
+          const isSelected = session.id === selectedSessionId;
+          const isActive = nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
+
+          return (
+            <button
+              key={session.id}
+              type="button"
+              onClick={() => onSelectSession(session.id)}
+              className={cn(
+                "border-border/70 bg-background/80 hover:bg-muted/80 flex min-w-0 shrink-0 items-center gap-2.5 rounded-md border px-3 py-1 text-left transition-colors",
+                isSelected && "bg-accent text-accent-foreground shadow-sm"
+              )}>
+              <span
+                className={cn("bg-muted size-2 shrink-0 rounded-full", isActive && "bg-green-500")}
+              />
+              <span className="max-w-52 min-w-0 truncate text-sm font-medium">{session.title}</span>
+              <button
+                type="button"
+                data-window-control-exclusion
+                aria-label={`Close ${session.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseSession(session.id);
+                }}
+                className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground inline-flex size-4 shrink-0 items-center justify-center rounded-sm transition-colors">
+                <X className="size-3" />
+              </button>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -234,9 +386,30 @@ function FileActivityPanels({
   );
 }
 
+function buildShortcuts(
+  shortcutActions: Record<string, KeyboardShortcut["handler"]>
+): KeyboardShortcut[] {
+  return APP_SHORTCUTS.flatMap((shortcut) => {
+    const handler = shortcutActions[shortcut.action];
+
+    if (!handler) {
+      return [];
+    }
+
+    return [
+      {
+        ...shortcut,
+        handler,
+      },
+    ];
+  });
+}
+
 function App() {
   const [runtimeHome, setRuntimeHome] = useState<string>("");
   const [sessions, setSessions] = useState<CodexSessionSummary[]>([]);
+  const [openSessionIds, setOpenSessionIds] = useState<string[]>([]);
+  const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [watchId, setWatchId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -248,10 +421,107 @@ function App() {
     deletedFiles: [],
   });
   const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
+  const activeSessionIdsRef = useRef<string[]>([]);
+  const dismissedSessionIdsRef = useRef(dismissedSessionIds);
+  const sessionsRef = useRef(sessions);
+  const openSessionIdsRef = useRef(openSessionIds);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  const openSessions = openSessionIds
+    .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
+    .filter((session): session is CodexSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
   const activitySections = buildActivitySections(fileActivity);
+
+  useEffect(() => {
+    dismissedSessionIdsRef.current = dismissedSessionIds;
+  }, [dismissedSessionIds]);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    openSessionIdsRef.current = openSessionIds;
+  }, [openSessionIds]);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
+
+  function selectSession(sessionId: string) {
+    setDismissedSessionIds((currentDismissedSessionIds) =>
+      currentDismissedSessionIds.filter((dismissedSessionId) => dismissedSessionId !== sessionId)
+    );
+    setOpenSessionIds((currentOpenSessionIds) => {
+      if (currentOpenSessionIds.includes(sessionId)) {
+        return currentOpenSessionIds;
+      }
+
+      return [...currentOpenSessionIds, sessionId];
+    });
+    setSelectedSessionId(sessionId);
+    setSearchQuery("");
+  }
+
+  function handleCloseSession(sessionId: string) {
+    const { nextOpenSessionIds, nextSelectedSessionId } = closeSessionTab(
+      openSessionIdsRef.current,
+      sessionId,
+      selectedSessionIdRef.current
+    );
+
+    setOpenSessionIds(nextOpenSessionIds);
+    setSelectedSessionId(nextSelectedSessionId);
+    setDismissedSessionIds((currentDismissedSessionIds) =>
+      currentDismissedSessionIds.includes(sessionId)
+        ? currentDismissedSessionIds
+        : [...currentDismissedSessionIds, sessionId]
+    );
+  }
+
+  function reconcileSessions(nextSessions: CodexSessionSummary[], currentNowMs: number) {
+    const { activeSessionIds, nextDismissedSessionIds, nextOpenSessionIds, nextSelectedSessionId } =
+      reconcileTabState({
+        currentDismissedSessionIds: dismissedSessionIdsRef.current,
+        currentOpenSessionIds: openSessionIdsRef.current,
+        currentSelectedSessionId: selectedSessionIdRef.current,
+        nowMs: currentNowMs,
+        previousActiveSessionIds: activeSessionIdsRef.current,
+        sessions: nextSessions,
+      });
+
+    setSessions(nextSessions);
+    setDismissedSessionIds(nextDismissedSessionIds);
+    setOpenSessionIds(nextOpenSessionIds);
+    setSelectedSessionId(nextSelectedSessionId);
+    activeSessionIdsRef.current = activeSessionIds;
+  }
+
+  const shortcutActions: Record<string, KeyboardShortcut["handler"]> = {
+    selectNextSessionTab: () => {
+      setSelectedSessionId((currentSessionId) =>
+        rotateSession(openSessionIdsRef.current, currentSessionId, 1)
+      );
+    },
+    selectPreviousSessionTab: () => {
+      setSelectedSessionId((currentSessionId) =>
+        rotateSession(openSessionIdsRef.current, currentSessionId, -1)
+      );
+    },
+    closeSelectedSessionTab: () => {
+      const selectedSessionId = selectedSessionIdRef.current;
+
+      if (!selectedSessionId) {
+        return;
+      }
+
+      handleCloseSession(selectedSessionId);
+    },
+  };
+
+  const shortcuts = buildShortcuts(shortcutActions);
 
   useEffect(() => {
     let disposed = false;
@@ -263,12 +533,7 @@ function App() {
       }
 
       setRuntimeHome(result.runtimeHome);
-      setSessions(result.sessions);
-      setSelectedSessionId((currentId) =>
-        result.sessions.some((session) => session.id === currentId)
-          ? currentId
-          : (result.sessions[0]?.id ?? "")
-      );
+      reconcileSessions(result.sessions, Date.now());
       setIsLoading(false);
     }
 
@@ -281,7 +546,10 @@ function App() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setNowMs(Date.now());
+      const currentNowMs = Date.now();
+
+      setNowMs(currentNowMs);
+      reconcileSessions(sessionsRef.current, currentNowMs);
     }, 15_000);
 
     return () => {
@@ -328,12 +596,7 @@ function App() {
         return;
       }
 
-      setSessions(result.sessions);
-      setSelectedSessionId((currentId) =>
-        result.sessions.some((session) => session.id === currentId)
-          ? currentId
-          : (result.sessions[0]?.id ?? "")
-      );
+      reconcileSessions(result.sessions, Date.now());
     }
 
     const unlistenPromise = listen("codex-session-watch-event", async (event) => {
@@ -387,32 +650,36 @@ function App() {
     };
   }, [selectedSession]);
 
+  useKeyboardShortcuts(shortcuts);
+
   return (
     <div className="bg-background text-foreground relative min-h-screen">
       <header
         data-tauri-drag-region
         onMouseDown={handleTitlebarMouseDown}
-        className="app-window-titlebar border-border/80 bg-background/90 fixed inset-x-0 top-0 z-20 border-b backdrop-blur">
-        <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
-          <div className="min-w-0">
-            <p className="text-foreground truncate text-sm font-semibold tracking-tight">
-              Codex Visualization
-            </p>
-          </div>
-          <div data-window-control-exclusion>
-            <SessionDropdown
+        className="app-window-titlebar bg-background/90 fixed inset-x-0 top-0 z-20 backdrop-blur">
+        <div className="flex h-10 w-full items-center gap-2 pr-3 pl-18 sm:pr-4 sm:pl-20">
+          <div className="shrink-0">
+            <SessionPickerDropdown
               nowMs={nowMs}
               searchQuery={searchQuery}
-              selectedSessionId={selectedSessionId}
-              selectedSessionLabel={selectedSessionLabel}
               sessions={sessions}
               setSearchQuery={setSearchQuery}
-              setSelectedSessionId={setSelectedSessionId}
+              onSelectSession={selectSession}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <SessionTabBar
+              nowMs={nowMs}
+              openSessions={openSessions}
+              selectedSessionId={selectedSessionId}
+              onCloseSession={handleCloseSession}
+              onSelectSession={selectSession}
             />
           </div>
         </div>
       </header>
-      <main className="px-6 pt-20 pb-6">
+      <main className="px-6 pt-12 pb-6">
         <Card className="mx-auto w-full max-w-6xl shadow-sm">
           <CardHeader>
             <CardTitle>{selectedSessionLabel}</CardTitle>

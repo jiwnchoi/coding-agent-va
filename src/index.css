@@ -157,6 +157,7 @@
   }
   html {
     @apply font-sans;
+    color-scheme: light dark;
     overscroll-behavior: none;
     overflow-y: overlay;
   }

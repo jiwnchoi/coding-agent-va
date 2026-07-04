@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 use watchexec::Watchexec;
 
 const SESSION_WATCH_EVENT: &str = "codex-session-watch-event";
+const SESSION_TITLE_MAX_CHARS: usize = 120;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -405,7 +406,7 @@ fn read_first_user_prompt_title(path: &Path) -> Option<String> {
             let Some(text) = item.get("text").and_then(|value| value.as_str()) else {
                 continue;
             };
-            let title = normalize_title_whitespace(text);
+            let title = derive_session_title(text);
             if !title.is_empty() && !is_metadata_prompt(&title) {
                 return Some(title);
             }
@@ -597,6 +598,44 @@ fn normalize_title_whitespace(text: impl AsRef<str>) -> String {
         .join(" ")
 }
 
+fn derive_session_title(text: &str) -> String {
+    let sanitized = strip_image_attachment_markers(text);
+    let non_empty_lines = sanitized
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let normalized_full_text = normalize_title_whitespace(&sanitized);
+    if non_empty_lines.len() < 3 && normalized_full_text.chars().count() <= SESSION_TITLE_MAX_CHARS
+    {
+        return normalized_full_text;
+    }
+
+    let first_non_empty_line = non_empty_lines
+        .first()
+        .copied()
+        .unwrap_or_default()
+        .to_string();
+    let normalized = normalize_title_whitespace(first_non_empty_line);
+    truncate_title(&normalized, SESSION_TITLE_MAX_CHARS)
+}
+
+fn truncate_title(text: &str, max_chars: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated = text
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        .trim_end()
+        .to_string();
+
+    format!("{truncated}…")
+}
+
 fn strip_image_attachment_markers(text: &str) -> String {
     let mut sanitized = String::with_capacity(text.len());
     let mut remaining = text;
@@ -756,8 +795,9 @@ fn timestamp_string_to_ms(timestamp: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_watch_plan, is_metadata_prompt, is_relevant_session_path,
+        create_watch_plan, derive_session_title, is_metadata_prompt, is_relevant_session_path,
         normalize_title_whitespace, read_codex_session_file_activity, read_first_user_prompt_title,
+        SESSION_TITLE_MAX_CHARS,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -905,6 +945,25 @@ mod tests {
             ),
             "세션 제목 파싱할 때 이런 이미지 제거하게 해줘".to_string()
         );
+    }
+
+    #[test]
+    fn session_title_uses_first_non_empty_line() {
+        assert_eq!(
+            derive_session_title(
+                "\n\n제목 한 줄만 보여줘\n\n아래는 아주 긴 기술 문서 본문입니다.\n두 번째 줄도 있습니다."
+            ),
+            "제목 한 줄만 보여줘".to_string()
+        );
+    }
+
+    #[test]
+    fn session_title_truncates_long_single_line_input() {
+        let long_title = "a".repeat(SESSION_TITLE_MAX_CHARS + 20);
+        let derived = derive_session_title(&long_title);
+
+        assert_eq!(derived.chars().count(), SESSION_TITLE_MAX_CHARS);
+        assert!(derived.ends_with('…'));
     }
 
     #[test]

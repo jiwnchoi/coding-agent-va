@@ -32,7 +32,7 @@ Applies to `src/**` and `modules/*/src/**`.
 
 - `dependency-cruiser` architecture rules apply only to `src/**`.
 - `eslint` rules apply to `src/**` and `modules/*/src/**`.
-- `oxlint` rules apply repository-wide to JavaScript/TypeScript files, excluding paths in `tools/config/.oxlintrc.json` `ignorePatterns`.
+- `oxlint` rules apply repository-wide to JavaScript/TypeScript files, excluding paths in `.oxlintrc.json` `ignorePatterns`.
 
 ## Test File Rules
 
