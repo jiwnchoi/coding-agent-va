@@ -7,30 +7,6 @@ settings:
 importers:
 
   .:
-    devDependencies:
-      '@typescript/native-preview':
-        specifier: 7.0.0-dev.20260628.1
-        version: 7.0.0-dev.20260628.1
-      lefthook:
-        specifier: ^2.1.9
-        version: 2.1.9
-      oxfmt:
-        specifier: ^0.56.0
-        version: 0.56.0
-      oxlint:
-        specifier: ^1.71.0
-        version: 1.71.0(oxlint-tsgolint@0.23.0)
-      oxlint-tsgolint:
-        specifier: ^0.23.0
-        version: 0.23.0
-      turbo:
-        specifier: ^2.10.0
-        version: 2.10.0
-      typescript:
-        specifier: ~5.8.3
-        version: 5.8.3
-
-  app:
     dependencies:
       '@fontsource-variable/geist':
         specifier: ^5.2.9
@@ -102,6 +78,21 @@ importers:
       eslint-plugin-react-you-might-not-need-an-effect:
         specifier: ^1.0.1
         version: 1.0.1(eslint@10.6.0(jiti@2.7.0))
+      lefthook:
+        specifier: ^2.1.9
+        version: 2.1.9
+      oxfmt:
+        specifier: ^0.56.0
+        version: 0.56.0
+      oxlint:
+        specifier: ^1.71.0
+        version: 1.71.0(oxlint-tsgolint@0.23.0)
+      oxlint-tsgolint:
+        specifier: ^0.23.0
+        version: 0.23.0
+      turbo:
+        specifier: ^2.10.0
+        version: 2.10.0
       typescript:
         specifier: ~5.8.3
         version: 5.8.3

@@ -1,6 +1,4 @@
 node_modules_bin := "./node_modules/.bin"
-app_dir := "app"
-app_node_modules_bin := "./app/node_modules/.bin"
 package_manager := `node -p 'require("./package.json").packageManager.split("+")[0]'`
 
 prepare-node:
@@ -9,23 +7,23 @@ prepare-node:
 node-install: prepare-node
 
 dev-ts:
-  (cd app && ./node_modules/.bin/vite)
+  ./node_modules/.bin/vite
 
 lint-ts:
-  (cd app && ../node_modules/.bin/oxlint src vite.config.ts --type-aware)
+  ./node_modules/.bin/oxlint src vite.config.ts --type-aware
 
 format-ts:
-  (cd app && ../node_modules/.bin/oxfmt --write src vite.config.ts)
+  ./node_modules/.bin/oxfmt --write src vite.config.ts
 
 typecheck-ts:
-  (cd app && ../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
+  ./node_modules/.bin/tsgo -p tsconfig.json --noEmit
 
 compile-ts:
   @just build-ts
 
 build-ts:
-  (cd app && ../node_modules/.bin/tsgo -p tsconfig.json --noEmit)
-  (cd app && ./node_modules/.bin/vite build)
+  ./node_modules/.bin/tsgo -p tsconfig.json --noEmit
+  ./node_modules/.bin/vite build
 
 test-ts:
   echo 'No TS test commands configured; skipping.'

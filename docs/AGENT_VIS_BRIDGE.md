@@ -233,7 +233,7 @@ MCP 호출은 에이전트 작업의 경계에 맞춘다.
   "kind": "change_boundary",
   "label": "Move graph indexing into Tauri Rust backend",
   "visualStyle": "group",
-  "visualTargetHints": ["app/src-tauri/src/indexer"]
+  "visualTargetHints": ["src-tauri/src/indexer"]
 }
 ```
 
@@ -249,7 +249,7 @@ MCP 호출은 에이전트 작업의 경계에 맞춘다.
   "kind": "change_boundary",
   "label": "Rust tree-sitter indexer added",
   "visualStyle": "group",
-  "visualTargetHints": ["app/src-tauri/src/indexer", "app/src-tauri/Cargo.toml"],
+  "visualTargetHints": ["src-tauri/src/indexer", "src-tauri/Cargo.toml"],
   "summary": "The TypeScript graph-indexer package was replaced by a Rust backend indexer."
 }
 ```
@@ -285,7 +285,7 @@ MCP는 아래 이벤트부터 시작한다.
   "kind": "change_boundary",
   "label": "Add watchexec session watcher",
   "visualStyle": "group",
-  "visualTargetHints": ["app/src-tauri/src/session_watch.rs", "app/src-tauri/src/lib.rs"]
+  "visualTargetHints": ["src-tauri/src/session_watch.rs", "src-tauri/src/lib.rs"]
 }
 ```
 
@@ -301,7 +301,7 @@ MCP는 아래 이벤트부터 시작한다.
   "kind": "relationship",
   "label": "Watcher command wiring",
   "visualStyle": "edge",
-  "visualTargetHints": ["app/src-tauri/src/session_watch.rs", "app/src-tauri/src/lib.rs"],
+  "visualTargetHints": ["src-tauri/src/session_watch.rs", "src-tauri/src/lib.rs"],
   "summary": "The watcher implementation and Tauri command registration belong to the same feature."
 }
 ```
@@ -318,7 +318,7 @@ MCP는 아래 이벤트부터 시작한다.
   "kind": "risk_marker",
   "label": "Watcher path dedupe may affect tests",
   "visualStyle": "badge",
-  "visualTargetHints": ["app/src-tauri/src/session_watch.rs"]
+  "visualTargetHints": ["src-tauri/src/session_watch.rs"]
 }
 ```
 

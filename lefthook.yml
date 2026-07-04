@@ -3,8 +3,8 @@ pre-commit:
   jobs:
     - name: Check TS
       glob:
-        - app/src/**/*.{ts,tsx,js,jsx}
-        - app/vite.config.ts
+        - src/**/*.{ts,tsx,js,jsx}
+        - vite.config.ts
         - package.json
       stage_fixed: true
       run: |
@@ -13,8 +13,8 @@ pre-commit:
         just typecheck-ts
     - name: Check Rust
       glob:
-        - app/src-tauri/src/**/*.rs
-        - app/src-tauri/Cargo.toml
+        - src-tauri/src/**/*.rs
+        - src-tauri/Cargo.toml
       stage_fixed: true
       run: |
         just format-rust

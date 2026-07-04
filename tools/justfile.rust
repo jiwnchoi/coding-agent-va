@@ -1,10 +1,10 @@
-rust_manifest := "app/src-tauri/Cargo.toml"
+rust_manifest := "src-tauri/Cargo.toml"
 
 prepare-rust:
   cargo fetch --manifest-path {{rust_manifest}}
 
 dev-rust:
-  (cd app && ./node_modules/.bin/tauri dev)
+  ./node_modules/.bin/tauri dev
 
 format-rust:
   cargo fmt --all --manifest-path {{rust_manifest}}

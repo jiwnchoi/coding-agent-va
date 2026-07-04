@@ -1,6 +1,6 @@
 # Indexer
 
-`app/src-tauri/src/indexer` is the Rust-side code graph indexer for the Tauri desktop app.
+`src-tauri/src/indexer` is the Rust-side code graph indexer for the Tauri desktop app.
 
 ## Why it lives in Rust
 

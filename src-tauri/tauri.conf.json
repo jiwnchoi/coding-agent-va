@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.codingagent.va.desktop",
   "build": {
-    "beforeDevCommand": "just --justfile ../../../justfile --working-directory ../../../ dev-ts",
+    "beforeDevCommand": "bash -lc 'repo_root=\"$(git rev-parse --show-toplevel)\" && just --justfile \"$repo_root/justfile\" --working-directory \"$repo_root\" dev-ts'",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "just --justfile ../../../justfile --working-directory ../../../ build-ts",
+    "beforeBuildCommand": "bash -lc 'repo_root=\"$(git rev-parse --show-toplevel)\" && just --justfile \"$repo_root/justfile\" --working-directory \"$repo_root\" build-ts'",
     "frontendDist": "../dist"
   },
   "app": {
