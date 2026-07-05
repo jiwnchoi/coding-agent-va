@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   CodexSessionFileDiff,
@@ -11,19 +11,18 @@ export function useSessionFileDiff(
   selectedSession: CodexSessionSummary | null,
   selectedActivityFile: SelectedActivityFile | null
 ) {
-  const [selectedFileDiff, setSelectedFileDiff] = useState<CodexSessionFileDiff | null>(null);
+  const [loadedSelectedFileDiff, setLoadedSelectedFileDiff] = useState<CodexSessionFileDiff | null>(
+    null
+  );
   const [isFileDiffLoading, setIsFileDiffLoading] = useState(false);
-  const [fileDiffErrorMessage, setFileDiffErrorMessage] = useState("");
+  const [loadedFileDiffErrorMessage, setLoadedFileDiffErrorMessage] = useState("");
   const clearSelectedFileDiffState = useCallback(() => {
-    setSelectedFileDiff(null);
-    setFileDiffErrorMessage("");
+    setLoadedSelectedFileDiff(null);
+    setLoadedFileDiffErrorMessage("");
   }, []);
 
   useEffect(() => {
     if (!selectedSession || !selectedActivityFile) {
-      setSelectedFileDiff(null);
-      setIsFileDiffLoading(false);
-      setFileDiffErrorMessage("");
       return;
     }
 
@@ -33,7 +32,7 @@ export function useSessionFileDiff(
 
     async function loadFileDiff() {
       setIsFileDiffLoading(true);
-      setFileDiffErrorMessage("");
+      setLoadedFileDiffErrorMessage("");
 
       try {
         const result = await invoke<CodexSessionFileDiff>("get_codex_session_file_diff", {
@@ -42,12 +41,12 @@ export function useSessionFileDiff(
         });
 
         if (!disposed) {
-          setSelectedFileDiff(result);
+          setLoadedSelectedFileDiff(result);
         }
       } catch (error) {
         if (!disposed) {
-          setSelectedFileDiff(null);
-          setFileDiffErrorMessage(
+          setLoadedSelectedFileDiff(null);
+          setLoadedFileDiffErrorMessage(
             error instanceof Error ? error.message : "Failed to load file diff."
           );
         }
@@ -65,9 +64,25 @@ export function useSessionFileDiff(
     };
   }, [selectedActivityFile, selectedSession]);
 
+  const selectedFileDiff = useMemo(() => {
+    if (!selectedSession || !selectedActivityFile) {
+      return null;
+    }
+
+    return loadedSelectedFileDiff;
+  }, [loadedSelectedFileDiff, selectedActivityFile, selectedSession]);
+
+  const fileDiffErrorMessage = useMemo(() => {
+    if (!selectedSession || !selectedActivityFile) {
+      return "";
+    }
+
+    return loadedFileDiffErrorMessage;
+  }, [loadedFileDiffErrorMessage, selectedActivityFile, selectedSession]);
+
   return {
     selectedFileDiff,
-    isFileDiffLoading,
+    isFileDiffLoading: selectedSession && selectedActivityFile ? isFileDiffLoading : false,
     fileDiffErrorMessage,
     clearSelectedFileDiffState,
   };

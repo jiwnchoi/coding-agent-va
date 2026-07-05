@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { CodexSessionFileActivity, CodexSessionSummary } from "@/lib/session-watch";
 
@@ -14,12 +14,12 @@ export function useSessionFileActivity(
   selectedSession: CodexSessionSummary | null,
   fileActivityRefreshVersion: number
 ) {
-  const [fileActivity, setFileActivity] = useState<CodexSessionFileActivity>(EMPTY_FILE_ACTIVITY);
+  const [loadedFileActivity, setLoadedFileActivity] =
+    useState<CodexSessionFileActivity>(EMPTY_FILE_ACTIVITY);
   const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedSession) {
-      setFileActivity(EMPTY_FILE_ACTIVITY);
       return;
     }
 
@@ -36,7 +36,7 @@ export function useSessionFileActivity(
         });
 
         if (!disposed) {
-          setFileActivity(result);
+          setLoadedFileActivity(result);
         }
       } finally {
         if (!disposed) {
@@ -52,8 +52,16 @@ export function useSessionFileActivity(
     };
   }, [fileActivityRefreshVersion, selectedSession]);
 
+  const fileActivity = useMemo(() => {
+    if (!selectedSession) {
+      return EMPTY_FILE_ACTIVITY;
+    }
+
+    return loadedFileActivity;
+  }, [loadedFileActivity, selectedSession]);
+
   return {
     fileActivity,
-    isFileActivityLoading,
+    isFileActivityLoading: selectedSession ? isFileActivityLoading : false,
   };
 }
