@@ -62,7 +62,7 @@ export function SessionFileViewer({
   }, [maxDiffPanelWidth]);
 
   useEffect(() => {
-    if (!isDiffViewerOpen || isWideLayout) {
+    if (!isDiffViewerOpen) {
       return;
     }
 
@@ -77,7 +77,7 @@ export function SessionFileViewer({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isDiffViewerOpen, isWideLayout, onClose]);
+  }, [isDiffViewerOpen, onClose]);
 
   if (!isDiffViewerOpen) {
     return null;
