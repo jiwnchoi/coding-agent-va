@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 
-import type { CodexSessionFileActivity, CodexSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionFileActivity, AgentSessionSummary } from "@/lib/session-watch";
 
-const EMPTY_FILE_ACTIVITY: CodexSessionFileActivity = {
+const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
   readFiles: [],
   editedFiles: [],
   impactedFiles: [],
@@ -11,11 +11,11 @@ const EMPTY_FILE_ACTIVITY: CodexSessionFileActivity = {
 };
 
 export function useSessionFileActivity(
-  selectedSession: CodexSessionSummary | null,
+  selectedSession: AgentSessionSummary | null,
   fileActivityRefreshVersion: number
 ) {
   const [loadedFileActivity, setLoadedFileActivity] =
-    useState<CodexSessionFileActivity>(EMPTY_FILE_ACTIVITY);
+    useState<AgentSessionFileActivity>(EMPTY_FILE_ACTIVITY);
   const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
 
   useEffect(() => {
@@ -30,8 +30,9 @@ export function useSessionFileActivity(
       setIsFileActivityLoading(true);
 
       try {
-        const result = await invoke<CodexSessionFileActivity>("get_codex_session_file_activity", {
-          rolloutPath: currentSession.rolloutPath,
+        const result = await invoke<AgentSessionFileActivity>("get_agent_session_file_activity", {
+          provider: currentSession.provider,
+          transcriptPath: currentSession.transcriptPath,
           cwd: currentSession.cwd,
         });
 

@@ -1,7 +1,7 @@
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { CodexSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/lib/session-watch";
 
-export function getActiveSessionIds(sessions: CodexSessionSummary[], nowMs: number) {
+export function getActiveSessionIds(sessions: AgentSessionSummary[], nowMs: number) {
   return sessions
     .filter((session) => nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS)
     .map((session) => session.id);
@@ -106,7 +106,7 @@ export function reconcileTabState({
   currentSelectedSessionId: string;
   nowMs: number;
   previousActiveSessionIds: string[];
-  sessions: CodexSessionSummary[];
+  sessions: AgentSessionSummary[];
 }) {
   const activeSessionIds = getActiveSessionIds(sessions, nowMs);
   const previousActiveSessionIdSet = new Set(previousActiveSessionIds);

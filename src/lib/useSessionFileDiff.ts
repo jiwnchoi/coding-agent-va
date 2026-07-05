@@ -2,16 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  CodexSessionFileDiff,
-  CodexSessionSummary,
+  AgentSessionFileDiff,
+  AgentSessionSummary,
   SelectedActivityFile,
 } from "@/lib/session-watch";
 
 export function useSessionFileDiff(
-  selectedSession: CodexSessionSummary | null,
+  selectedSession: AgentSessionSummary | null,
   selectedActivityFile: SelectedActivityFile | null
 ) {
-  const [loadedSelectedFileDiff, setLoadedSelectedFileDiff] = useState<CodexSessionFileDiff | null>(
+  const [loadedSelectedFileDiff, setLoadedSelectedFileDiff] = useState<AgentSessionFileDiff | null>(
     null
   );
   const [isFileDiffLoading, setIsFileDiffLoading] = useState(false);
@@ -35,7 +35,7 @@ export function useSessionFileDiff(
       setLoadedFileDiffErrorMessage("");
 
       try {
-        const result = await invoke<CodexSessionFileDiff>("get_codex_session_file_diff", {
+        const result = await invoke<AgentSessionFileDiff>("get_agent_session_file_diff", {
           filePath: currentFilePath,
           cwd: currentCwd,
         });

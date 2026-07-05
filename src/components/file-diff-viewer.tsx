@@ -10,7 +10,7 @@ import {
   SHIKI_LIGHT_THEME,
 } from "@/lib/monaco-shiki";
 
-type CodexSessionFileDiff = {
+type AgentSessionFileDiff = {
   filePath: string;
   displayPath: string;
   originalContent: string;
@@ -29,7 +29,7 @@ export function FileDiffViewer({
   theme,
   viewerMode,
 }: {
-  diff: CodexSessionFileDiff | null;
+  diff: AgentSessionFileDiff | null;
   isLoading: boolean;
   errorMessage: string;
   onClose: () => void;
