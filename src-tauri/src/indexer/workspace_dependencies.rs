@@ -1,15 +1,37 @@
 use super::import_extractor::extract_imports;
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
+#[cfg(test)]
 pub fn find_impacted_files(
     workspace_root: &Path,
     changed_files: &[PathBuf],
 ) -> Result<Vec<String>, String> {
+    let impacted_relations = find_impacted_file_relations(workspace_root, changed_files)?;
+
+    Ok(impacted_relations
+        .into_iter()
+        .map(|relation| relation.impacted_file)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ImpactedFileRelation {
+    pub changed_file: String,
+    pub impacted_file: String,
+    pub import_specifier: String,
+}
+
+pub fn find_impacted_file_relations(
+    workspace_root: &Path,
+    changed_files: &[PathBuf],
+) -> Result<Vec<ImpactedFileRelation>, String> {
     if !workspace_root.exists() {
         return Ok(Vec::new());
     }
@@ -24,7 +46,7 @@ pub fn find_impacted_files(
     let mut known_files = collect_known_files(&workspace_root)?;
     known_files.extend(changed_files.iter().cloned());
 
-    let mut reverse_dependencies = HashMap::<PathBuf, BTreeSet<PathBuf>>::new();
+    let mut impacted_relations = BTreeSet::<ImpactedFileRelation>::new();
 
     for importer in &known_files {
         if !importer.is_file() {
@@ -49,29 +71,27 @@ pub fn find_impacted_files(
                 &workspace_root,
                 &known_files,
             ) {
-                reverse_dependencies
-                    .entry(resolved)
-                    .or_default()
-                    .insert(importer.clone());
+                if !changed_files.contains(&resolved) || changed_files.contains(importer) {
+                    continue;
+                }
+
+                let Some(changed_file) = relative_workspace_path(&resolved, &workspace_root) else {
+                    continue;
+                };
+                let Some(impacted_file) = relative_workspace_path(importer, &workspace_root) else {
+                    continue;
+                };
+
+                impacted_relations.insert(ImpactedFileRelation {
+                    changed_file,
+                    impacted_file,
+                    import_specifier: import.specifier.clone(),
+                });
             }
         }
     }
 
-    let impacted_files = changed_files
-        .iter()
-        .flat_map(|changed_file| reverse_dependencies.get(changed_file).into_iter().flatten())
-        .filter(|importer| !changed_files.contains(*importer))
-        .filter_map(|importer| {
-            importer
-                .strip_prefix(&workspace_root)
-                .ok()
-                .map(|path| path.display().to_string())
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    Ok(impacted_files)
+    Ok(impacted_relations.into_iter().collect())
 }
 
 fn collect_known_files(workspace_root: &Path) -> Result<HashSet<PathBuf>, String> {
@@ -218,6 +238,12 @@ fn normalize_missing_path(path: &Path) -> PathBuf {
     normalized
 }
 
+fn relative_workspace_path(path: &Path, workspace_root: &Path) -> Option<String> {
+    path.strip_prefix(workspace_root)
+        .ok()
+        .map(|path| path.display().to_string())
+}
+
 fn is_ignored(path: &Path) -> bool {
     path.components().any(|component| {
         matches!(
@@ -229,6 +255,7 @@ fn is_ignored(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::find_impacted_file_relations;
     use super::find_impacted_files;
     use std::fs;
     use std::path::PathBuf;
@@ -268,6 +295,29 @@ mod tests {
             .expect("index deps");
 
         assert_eq!(impacted_files, vec!["src/app.ts"]);
+        fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+    }
+
+    #[test]
+    fn explains_why_files_are_impacted() {
+        let workspace_root = create_temp_workspace("relations");
+        let src_dir = workspace_root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("app.ts"),
+            "import { value } from './dep';\nconsole.log(value);\n",
+        )
+        .expect("write app");
+        fs::write(src_dir.join("dep.ts"), "export const value = 1;\n").expect("write dep");
+
+        let impacted_relations =
+            find_impacted_file_relations(&workspace_root, &[src_dir.join("dep.ts")])
+                .expect("index dependency relations");
+
+        assert_eq!(impacted_relations.len(), 1);
+        assert_eq!(impacted_relations[0].changed_file, "src/dep.ts");
+        assert_eq!(impacted_relations[0].impacted_file, "src/app.ts");
+        assert_eq!(impacted_relations[0].import_specifier, "./dep");
         fs::remove_dir_all(workspace_root).expect("cleanup workspace");
     }
 

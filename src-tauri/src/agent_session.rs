@@ -8,16 +8,20 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, State};
+use ts_rs::TS;
 use walkdir::WalkDir;
 use watchexec::Watchexec;
 
-use crate::indexer::workspace_dependencies::find_impacted_files;
+use crate::indexer::workspace_dependencies::{
+    find_impacted_file_relations, ImpactedFileRelation as WorkspaceImpactedFileRelation,
+};
 
 const AGENT_SESSION_WATCH_EVENT: &str = "agent-session-watch-event";
 const SESSION_TITLE_MAX_CHARS: usize = 120;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
 pub enum AgentSessionProvider {
     Codex,
     Claude,
@@ -46,7 +50,7 @@ impl AgentSessionProvider {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRuntimeSource {
     pub provider: AgentSessionProvider,
@@ -55,7 +59,7 @@ pub struct AgentRuntimeSource {
     pub available: bool,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionSummary {
     pub id: String,
@@ -69,14 +73,14 @@ pub struct AgentSessionSummary {
     pub updated_at_ms: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionList {
     pub sources: Vec<AgentRuntimeSource>,
     pub sessions: Vec<AgentSessionSummary>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionWatchTarget {
     pub path: String,
@@ -85,7 +89,7 @@ pub struct SessionWatchTarget {
     pub reason: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionWatchPlan {
     pub watch_id: String,
@@ -95,7 +99,7 @@ pub struct SessionWatchPlan {
     pub git_index_paths: Vec<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionWatchRegistration {
     pub watch_id: String,
@@ -105,7 +109,7 @@ pub struct SessionWatchRegistration {
     pub git_index_paths: Vec<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionWatchEventPayload {
     pub watch_id: String,
@@ -116,16 +120,25 @@ pub struct SessionWatchEventPayload {
     pub timestamp_ms: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionFileActivity {
     pub read_files: Vec<String>,
     pub edited_files: Vec<String>,
     pub impacted_files: Vec<String>,
     pub deleted_files: Vec<String>,
+    pub impacted_relations: Vec<AgentSessionImpactedFileRelation>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionImpactedFileRelation {
+    pub changed_file: String,
+    pub impacted_file: String,
+    pub import_specifier: String,
+}
+
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionFileDiff {
     pub file_path: String,
@@ -216,14 +229,21 @@ trait AgentSessionProtocol: Send + Sync {
             &mut activity.deleted_files,
         );
         remove_edited_files_from_read_files(cwd, &mut activity.read_files, &activity.edited_files);
-        let impacted_files =
-            resolve_impacted_files(cwd, &activity.edited_files, &activity.deleted_files)?;
+        let impacted_relations =
+            resolve_impacted_file_relations(cwd, &activity.edited_files, &activity.deleted_files)?;
+        let impacted_files = impacted_relations
+            .iter()
+            .map(|relation| relation.impacted_file.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
 
         Ok(AgentSessionFileActivity {
             read_files: sort_file_activity(activity.read_files),
             edited_files: sort_file_activity(activity.edited_files),
             impacted_files,
             deleted_files: sort_file_activity(activity.deleted_files),
+            impacted_relations,
         })
     }
 }
@@ -1363,11 +1383,11 @@ fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> {
     entries.into_iter().map(|(path, _)| path).collect()
 }
 
-fn resolve_impacted_files(
+fn resolve_impacted_file_relations(
     cwd: Option<&str>,
     edited_files: &HashMap<String, u64>,
     deleted_files: &HashMap<String, u64>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<AgentSessionImpactedFileRelation>, String> {
     let Some(workspace_root) = cwd.map(PathBuf::from) else {
         return Ok(Vec::new());
     };
@@ -1378,7 +1398,22 @@ fn resolve_impacted_files(
         .map(PathBuf::from)
         .collect::<Vec<_>>();
 
-    find_impacted_files(&workspace_root, &changed_files)
+    find_impacted_file_relations(&workspace_root, &changed_files).map(|relations| {
+        relations
+            .into_iter()
+            .map(agent_impacted_file_relation_from_workspace)
+            .collect()
+    })
+}
+
+fn agent_impacted_file_relation_from_workspace(
+    relation: WorkspaceImpactedFileRelation,
+) -> AgentSessionImpactedFileRelation {
+    AgentSessionImpactedFileRelation {
+        changed_file: relation.changed_file,
+        impacted_file: relation.impacted_file,
+        import_specifier: relation.import_specifier,
+    }
 }
 
 fn remove_edited_files_from_read_files(

@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@xyflow/react/dist/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -281,6 +282,157 @@
   .app-diff-modal-panel > section {
     flex: 1 1 auto;
     min-height: 0;
+  }
+
+  .context-graph-shell {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    height: clamp(28rem, 58vh, 44rem);
+    min-height: 24rem;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .context-graph-shell .react-flow__pane {
+    cursor: grab;
+  }
+
+  .context-graph-shell .react-flow__pane:active {
+    cursor: grabbing;
+  }
+
+  .context-graph-node {
+    background: color-mix(in oklch, var(--card) 94%, transparent);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 0.75rem 2rem color-mix(in oklch, var(--foreground) 8%, transparent);
+    color: var(--card-foreground);
+    min-height: 4.5rem;
+    padding: 0.75rem;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+    width: 13.75rem;
+  }
+
+  .context-graph-handle {
+    background: transparent;
+    border: 0;
+    height: 0.25rem;
+    opacity: 0;
+    pointer-events: none;
+    width: 0.25rem;
+  }
+
+  .context-graph-node:hover {
+    border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
+    box-shadow: 0 1rem 2.5rem color-mix(in oklch, var(--foreground) 12%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .context-graph-node-repo {
+    background: color-mix(in oklch, var(--foreground) 7%, var(--card));
+  }
+
+  .context-graph-node-directory {
+    background: color-mix(in oklch, var(--muted) 38%, var(--card));
+  }
+
+  .context-graph-node-file {
+    background: var(--card);
+  }
+
+  .context-graph-node-activity-edited {
+    border-color: #2ca02c;
+  }
+
+  .context-graph-node-activity-deleted {
+    border-color: #d62728;
+  }
+
+  .context-graph-node-activity-impacted {
+    border-color: #ff7f0e;
+  }
+
+  .context-graph-node-selected {
+    border-color: color-mix(in oklch, var(--foreground) 58%, var(--border));
+    box-shadow:
+      0 0 0 3px color-mix(in oklch, var(--foreground) 10%, transparent),
+      0 1rem 2.5rem color-mix(in oklch, var(--foreground) 14%, transparent);
+  }
+
+  .context-graph-contains-edge .react-flow__edge-path {
+    stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
+    stroke-width: 2.25;
+    opacity: 0.85;
+  }
+
+  .context-graph-contains-edge .react-flow__edge-marker,
+  .context-graph-impact-edge .react-flow__edge-marker,
+  .context-graph-impact-edge-highlighted .react-flow__edge-marker {
+    fill: currentColor;
+    stroke: currentColor;
+  }
+
+  .context-graph-impact-edge .react-flow__edge-path,
+  .context-graph-impact-edge-highlighted .react-flow__edge-path {
+    stroke: oklch(0.56 0.14 220);
+    stroke-dasharray: 7 5;
+    stroke-width: 2;
+  }
+
+  .context-graph-impact-edge .react-flow__edge-path {
+    opacity: 0.42;
+  }
+
+  .context-graph-impact-edge-highlighted .react-flow__edge-path {
+    opacity: 1;
+    stroke-width: 3;
+  }
+
+  .context-graph-status,
+  .context-graph-error {
+    border-radius: 999px;
+    font-size: 0.75rem;
+    left: 1rem;
+    padding: 0.45rem 0.75rem;
+    position: absolute;
+    top: 1rem;
+    z-index: 5;
+  }
+
+  .context-graph-status {
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    border: 1px solid var(--border);
+    color: var(--muted-foreground);
+  }
+
+  .context-graph-error {
+    background: color-mix(in oklch, var(--destructive) 14%, var(--card));
+    border: 1px solid color-mix(in oklch, var(--destructive) 38%, var(--border));
+    color: var(--destructive);
+  }
+
+  .context-graph-empty {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    inset: 0;
+    justify-content: center;
+    padding: 2rem;
+    position: absolute;
+    text-align: center;
+    z-index: 2;
+  }
+
+  .context-graph-inspector {
+    background: color-mix(in oklch, var(--muted) 26%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    min-width: 0;
+    padding: 0.75rem;
   }
 
   @media (min-width: 640px) {

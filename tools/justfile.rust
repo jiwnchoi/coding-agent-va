@@ -21,6 +21,9 @@ typecheck-rust:
 compile-rust:
   cargo check --manifest-path {{rust_manifest}} --all-targets
 
+generate-ts-bindings:
+  UPDATE_TS_BINDINGS=1 cargo test --manifest-path {{rust_manifest}} typescript_bindings_are_current
+
 build-rust:
   cargo build --manifest-path {{rust_manifest}}
 

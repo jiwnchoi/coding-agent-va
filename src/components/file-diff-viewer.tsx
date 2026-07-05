@@ -9,17 +9,7 @@ import {
   SHIKI_DARK_THEME,
   SHIKI_LIGHT_THEME,
 } from "@/lib/monaco-shiki";
-
-type AgentSessionFileDiff = {
-  filePath: string;
-  displayPath: string;
-  originalContent: string;
-  modifiedContent: string;
-  diffBaseLabel: string;
-  diffTargetLabel: string;
-  fileMissing: boolean;
-  isTracked: boolean;
-};
+import type { AgentSessionFileDiff } from "@/lib/session-watch";
 
 export function FileDiffViewer({
   diff,

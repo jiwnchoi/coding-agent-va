@@ -8,6 +8,7 @@ const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
   editedFiles: [],
   impactedFiles: [],
   deletedFiles: [],
+  impactedRelations: [],
 };
 
 export function useSessionFileActivity(

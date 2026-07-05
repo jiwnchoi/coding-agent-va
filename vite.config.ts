@@ -20,6 +20,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      elkjs: path.resolve(__dirname, "./node_modules/elkjs/lib/elk.bundled.js"),
     },
   },
 

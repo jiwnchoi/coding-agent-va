@@ -1,23 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildShortcuts,
   buildTabNumberShortcutActions,
-  FileActivityPanels,
   handleTitlebarMouseDown,
   rotateSession,
   selectMostRecentlyActiveSession,
-  SessionFileViewer,
+  SessionContextGraphView,
   SessionPickerDropdown,
   SessionTabBar,
   useSessionState,
@@ -25,17 +17,12 @@ import {
 import type { KeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import { useKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import {
-  buildActivitySections,
-  formatRuntimeSources,
   type AgentRuntimeSource,
   type AgentSessionList,
   type AgentSessionSummary,
-  type SelectedActivityFile,
   type SessionWatchRegistration,
 } from "@/lib/session-watch";
-import { useEditorTheme } from "@/lib/useEditorTheme";
 import { useSessionFileActivity } from "@/lib/useSessionFileActivity";
-import { useSessionFileDiff } from "@/lib/useSessionFileDiff";
 
 function App() {
   const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
@@ -56,10 +43,6 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
-  const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
-    null
-  );
-  const editorTheme = useEditorTheme();
   const openSessions = openSessionIds
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
     .filter((session): session is AgentSessionSummary => session !== null);
@@ -68,38 +51,13 @@ function App() {
     selectedSession,
     fileActivityRefreshVersion
   );
-  const { selectedFileDiff, isFileDiffLoading, fileDiffErrorMessage, clearSelectedFileDiffState } =
-    useSessionFileDiff(selectedSession, selectedActivityFile);
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
-  const activitySections = buildActivitySections(fileActivity);
-  const runtimeLabel = formatRuntimeSources(runtimeSources);
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     setSearchQuery("");
-    setSelectedActivityFile(null);
-    clearSelectedFileDiffState();
   }
-
-  function handleSelectActivityFile(selection: SelectedActivityFile) {
-    if (
-      selectedActivityFile?.activityKey === selection.activityKey &&
-      selectedActivityFile.filePath === selection.filePath
-    ) {
-      setSelectedActivityFile(null);
-      clearSelectedFileDiffState();
-      return;
-    }
-
-    setSelectedActivityFile(selection);
-    clearSelectedFileDiffState();
-  }
-
-  const handleCloseDiffViewer = useCallback(() => {
-    setSelectedActivityFile(null);
-    clearSelectedFileDiffState();
-  }, [clearSelectedFileDiffState]);
 
   const shortcutActions: Record<string, KeyboardShortcut["handler"]> = {
     ...buildTabNumberShortcutActions(handleSelectSession, openSessionIdsRef),
@@ -247,8 +205,6 @@ function App() {
 
   useKeyboardShortcuts(shortcuts);
 
-  const isDiffViewerOpen = selectedActivityFile !== null;
-
   return (
     <div className="bg-background text-foreground relative min-h-screen">
       <header
@@ -277,45 +233,21 @@ function App() {
         </div>
       </header>
       <main className="px-6 pt-12 pb-6">
-        <div
-          data-diff-open={isDiffViewerOpen}
-          className="app-main-panels mx-auto flex w-full max-w-[96rem] gap-6">
+        <div className="app-main-panels mx-auto flex w-full max-w-[72rem] gap-6">
           <Card className="app-main-panel w-full shadow-sm">
             <CardHeader>
               <CardTitle>{selectedSessionLabel}</CardTitle>
-              <CardDescription>현재 선택된 Agent Session의 파일 활동입니다.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
-                <span>runtime homes: {runtimeLabel}</span>
-                <span>provider: {selectedSession?.providerLabel ?? "Unknown"}</span>
-                <span>workspace: {selectedSession?.cwd ?? "Unknown"}</span>
-              </div>
-              <FileActivityPanels
-                isLoading={isFileActivityLoading}
-                sections={activitySections}
-                selectedFilePath={selectedActivityFile?.filePath ?? ""}
-                onSelectFile={handleSelectActivityFile}
+            <CardContent>
+              <SessionContextGraphView
+                fileActivity={fileActivity}
+                isFileActivityLoading={isFileActivityLoading}
+                selectedActivityFile={null}
+                selectedSession={selectedSession}
+                onSelectFile={() => {}}
               />
             </CardContent>
-            <CardFooter className="text-muted-foreground justify-between text-sm">
-              <span>
-                Read, edited, deleted, and Tree-sitter-derived impacted files are shown for the
-                selected agent session.
-              </span>
-              <span>
-                {selectedSession ? new Date(selectedSession.updatedAtMs).toLocaleTimeString() : ""}
-              </span>
-            </CardFooter>
           </Card>
-          <SessionFileViewer
-            errorMessage={fileDiffErrorMessage}
-            isLoading={isFileDiffLoading}
-            onClose={handleCloseDiffViewer}
-            selectedActivityFile={selectedActivityFile}
-            selectedFileDiff={selectedFileDiff}
-            theme={editorTheme}
-          />
         </div>
       </main>
     </div>

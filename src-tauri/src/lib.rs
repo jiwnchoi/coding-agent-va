@@ -1,6 +1,9 @@
 mod agent_session;
 mod indexer;
 
+#[cfg(test)]
+mod ts_bindings;
+
 use agent_session::{
     get_agent_session_file_activity, get_agent_session_file_diff, list_agent_sessions,
     manage_agent_session_watch_state, plan_agent_session_watch, start_agent_session_watch,
