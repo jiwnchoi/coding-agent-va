@@ -46,7 +46,12 @@ export function SessionFileViewer({
       errorMessage={errorMessage}
       onClose={onClose}
       theme={theme}
-      viewerMode={selectedActivityFile.activityKey === "read" ? "read" : "diff"}
+      viewerMode={
+        selectedActivityFile.activityKey === "edited" ||
+        selectedActivityFile.activityKey === "deleted"
+          ? "diff"
+          : "read"
+      }
     />
   ) : null;
 

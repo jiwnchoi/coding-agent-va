@@ -3,6 +3,7 @@ pub mod import_extractor;
 pub mod language;
 pub mod parser_registry;
 pub mod symbol_extractor;
+pub mod workspace_dependencies;
 pub mod workspace_indexer;
 
 pub use graph::ArchitectureGraph;

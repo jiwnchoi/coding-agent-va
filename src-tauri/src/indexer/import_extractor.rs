@@ -109,13 +109,28 @@ fn find_import_text(source: &str, node: Node<'_>) -> Option<String> {
             child.kind(),
             "string"
                 | "string_literal"
+                | "string_fragment"
                 | "interpreted_string_literal"
                 | "raw_string_literal"
                 | "system_lib_string"
-                | "path"
-                | "identifier"
-                | "scoped_identifier"
-                | "namespace_identifier"
+        ) {
+            if let Some(text) = normalize_text(source, child) {
+                return Some(text);
+            }
+        }
+
+        if let Some(text) = find_string_like_text(source, child) {
+            return Some(text);
+        }
+    }
+
+    for index in 0..node.named_child_count() {
+        let Some(child) = node.named_child(index as u32) else {
+            continue;
+        };
+        if matches!(
+            child.kind(),
+            "path" | "identifier" | "scoped_identifier" | "namespace_identifier"
         ) {
             if let Some(text) = normalize_text(source, child) {
                 return Some(text);
@@ -123,6 +138,34 @@ fn find_import_text(source: &str, node: Node<'_>) -> Option<String> {
         }
 
         if let Some(text) = find_import_text(source, child) {
+            return Some(text);
+        }
+    }
+
+    None
+}
+
+fn find_string_like_text(source: &str, node: Node<'_>) -> Option<String> {
+    for index in 0..node.named_child_count() {
+        let Some(child) = node.named_child(index as u32) else {
+            continue;
+        };
+
+        if matches!(
+            child.kind(),
+            "string"
+                | "string_literal"
+                | "string_fragment"
+                | "interpreted_string_literal"
+                | "raw_string_literal"
+                | "system_lib_string"
+        ) {
+            if let Some(text) = normalize_text(source, child) {
+                return Some(text);
+            }
+        }
+
+        if let Some(text) = find_string_like_text(source, child) {
             return Some(text);
         }
     }

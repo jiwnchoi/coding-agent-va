@@ -279,7 +279,8 @@ function App() {
             </CardContent>
             <CardFooter className="text-muted-foreground justify-between text-sm">
               <span>
-                Read, edited, and deleted files are extracted from the selected session rollout.
+                Read, edited, deleted, and Tree-sitter-derived impacted files are shown for the
+                selected session.
               </span>
               <span>
                 {selectedSession ? new Date(selectedSession.updatedAtMs).toLocaleTimeString() : ""}

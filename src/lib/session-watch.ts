@@ -1,4 +1,4 @@
-import { Eye, FilePenLine, Trash2 } from "lucide-react";
+import { Eye, FilePenLine, Link2, Trash2 } from "lucide-react";
 
 export type CodexSessionSummary = {
   id: string;
@@ -30,10 +30,11 @@ export type SessionWatchTarget = {
 export type CodexSessionFileActivity = {
   readFiles: string[];
   editedFiles: string[];
+  impactedFiles: string[];
   deletedFiles: string[];
 };
 
-export type ActivitySectionKey = "read" | "edited" | "deleted";
+export type ActivitySectionKey = "read" | "edited" | "impacted" | "deleted";
 
 export type ActivitySection = {
   key: ActivitySectionKey;
@@ -62,6 +63,7 @@ export function buildActivitySections(fileActivity: CodexSessionFileActivity): A
   return [
     { key: "read", title: "Read", icon: Eye, files: fileActivity.readFiles },
     { key: "edited", title: "Edited", icon: FilePenLine, files: fileActivity.editedFiles },
+    { key: "impacted", title: "Impacted", icon: Link2, files: fileActivity.impactedFiles },
     { key: "deleted", title: "Deleted", icon: Trash2, files: fileActivity.deletedFiles },
   ];
 }

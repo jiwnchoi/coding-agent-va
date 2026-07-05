@@ -6,6 +6,7 @@ import type { CodexSessionFileActivity, CodexSessionSummary } from "@/lib/sessio
 const EMPTY_FILE_ACTIVITY: CodexSessionFileActivity = {
   readFiles: [],
   editedFiles: [],
+  impactedFiles: [],
   deletedFiles: [],
 };
 

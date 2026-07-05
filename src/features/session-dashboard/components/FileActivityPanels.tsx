@@ -13,7 +13,7 @@ export function FileActivityPanels({
   onSelectFile: (selection: SelectedActivityFile) => void;
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-4">
       {sections.map((section) => {
         const Icon = section.icon;
 

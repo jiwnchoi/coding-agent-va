@@ -9,6 +9,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
+
+use crate::indexer::workspace_dependencies::find_impacted_files;
 use watchexec::Watchexec;
 
 const SESSION_WATCH_EVENT: &str = "codex-session-watch-event";
@@ -73,6 +75,7 @@ pub struct CodexSessionList {
 pub struct CodexSessionFileActivity {
     pub read_files: Vec<String>,
     pub edited_files: Vec<String>,
+    pub impacted_files: Vec<String>,
     pub deleted_files: Vec<String>,
 }
 
@@ -493,12 +496,32 @@ fn read_codex_session_file_activity(
 
     filter_written_files_by_git_status(cwd, &mut edited_files, &mut deleted_files);
     remove_edited_files_from_read_files(cwd, &mut read_files, &edited_files);
+    let impacted_files = resolve_impacted_files(cwd, &edited_files, &deleted_files)?;
 
     Ok(CodexSessionFileActivity {
         read_files: sort_file_activity(read_files),
         edited_files: sort_file_activity(edited_files),
+        impacted_files,
         deleted_files: sort_file_activity(deleted_files),
     })
+}
+
+fn resolve_impacted_files(
+    cwd: Option<&str>,
+    edited_files: &HashMap<String, u64>,
+    deleted_files: &HashMap<String, u64>,
+) -> Result<Vec<String>, String> {
+    let Some(workspace_root) = cwd.map(PathBuf::from) else {
+        return Ok(Vec::new());
+    };
+
+    let changed_files = edited_files
+        .keys()
+        .chain(deleted_files.keys())
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+
+    find_impacted_files(&workspace_root, &changed_files)
 }
 
 fn read_codex_session_file_diff(
