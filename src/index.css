@@ -150,16 +150,39 @@
     background-clip: padding-box;
   }
 
+  body,
+  #root,
+  #root * {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   body {
     @apply bg-background text-foreground;
     overscroll-behavior: none;
     overflow-y: overlay;
   }
+
   html {
     @apply font-sans;
     color-scheme: light dark;
     overscroll-behavior: none;
     overflow-y: overlay;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .monaco-editor,
+  .monaco-editor *,
+  .monaco-diff-editor,
+  .monaco-diff-editor * {
+    -webkit-user-select: text;
+    user-select: text;
   }
 }
 
@@ -186,9 +209,9 @@
   }
 
   .app-diff-panel {
+    flex: 0 0 auto;
     min-width: 0;
     display: flex;
-    width: 100%;
     opacity: 0;
     animation: app-diff-panel-fade-in 180ms ease forwards;
   }
@@ -198,19 +221,82 @@
     min-height: 100%;
   }
 
+  .react-resizable {
+    flex: 0 0 auto;
+    max-width: 100%;
+    position: relative;
+  }
+
+  .react-resizable-handle {
+    position: absolute;
+    z-index: 10;
+  }
+
+  .react-resizable-handle-w {
+    top: 0;
+    bottom: 0;
+    left: -0.75rem;
+    width: 1.5rem;
+    cursor: col-resize;
+  }
+
+  .react-resizable-handle-w::before {
+    background: var(--border);
+    border-radius: 999px;
+    content: "";
+    height: 3.5rem;
+    left: 50%;
+    opacity: 0.7;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition:
+      background 160ms ease,
+      opacity 160ms ease;
+    width: 0.1875rem;
+  }
+
+  .react-resizable-handle-w:hover::before {
+    background: var(--ring);
+    opacity: 1;
+  }
+
+  .app-diff-modal {
+    align-items: stretch;
+    background: color-mix(in oklch, var(--background) 82%, transparent);
+    backdrop-filter: blur(10px);
+    display: flex;
+    inset: 0;
+    padding: 3.25rem 0.75rem 0.75rem;
+    position: fixed;
+    z-index: 30;
+  }
+
+  .app-diff-modal-panel {
+    display: flex;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .app-diff-modal-panel > section {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  @media (min-width: 640px) {
+    .app-diff-modal {
+      padding: 4rem 1.5rem 1.5rem;
+    }
+  }
+
   @media (min-width: 1280px) {
     .app-main-panels[data-diff-open="false"] {
       max-width: 72rem;
     }
 
     .app-main-panels[data-diff-open="true"] .app-main-panel {
-      flex: 0 1 calc(50% - 0.75rem);
-      max-width: calc(50% - 0.75rem);
-    }
-
-    .app-main-panels[data-diff-open="true"] .app-diff-panel {
-      flex: 0 1 calc(50% - 0.75rem);
-      max-width: calc(50% - 0.75rem);
+      flex: 1 1 auto;
+      max-width: none;
     }
 
     .app-main-panels[data-diff-open="false"] .app-main-panel {

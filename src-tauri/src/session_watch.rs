@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
@@ -29,6 +29,7 @@ pub struct SessionWatchPlan {
     pub watch_id: String,
     pub runtime_home: String,
     pub watch_targets: Vec<SessionWatchTarget>,
+    pub git_index_paths: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -37,6 +38,7 @@ pub struct SessionWatchRegistration {
     pub watch_id: String,
     pub runtime_home: String,
     pub watch_targets: Vec<SessionWatchTarget>,
+    pub git_index_paths: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -212,6 +214,11 @@ pub async fn start_codex_session_watch(
     let plan = create_watch_plan(&runtime_home)?;
     let watch_id = plan.watch_id.clone();
     let runtime_home_path = PathBuf::from(&plan.runtime_home);
+    let git_index_paths = plan
+        .git_index_paths
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
     let watch_paths = plan
         .watch_targets
         .iter()
@@ -237,12 +244,16 @@ pub async fn start_codex_session_watch(
     let app_handle = app.clone();
     let watch_id_for_task = watch_id.clone();
     let runtime_home_for_task = runtime_home_path.clone();
+    let git_index_paths_for_task = git_index_paths.clone();
     let wx = Watchexec::new(move |action| {
         let changed_paths = action
             .events
             .iter()
             .flat_map(|event| event.paths().map(|(path, _)| path.to_path_buf()))
-            .filter(|path| is_relevant_session_path(path, &runtime_home_for_task))
+            .map(|path| normalize_watch_event_path(&path))
+            .filter(|path| {
+                is_relevant_watch_path(path, &runtime_home_for_task, &git_index_paths_for_task)
+            })
             .collect::<BTreeSet<_>>()
             .into_iter()
             .map(|path| path.display().to_string())
@@ -273,6 +284,7 @@ pub async fn start_codex_session_watch(
     })
     .map_err(|error| format!("failed to create watchexec watcher: {error}"))?;
 
+    wx.config.throttle(Duration::from_millis(500));
     wx.config.pathset(watch_paths.clone());
 
     let watch_id_for_runtime_error = watch_id.clone();
@@ -301,6 +313,7 @@ pub async fn start_codex_session_watch(
         watch_id,
         runtime_home: plan.runtime_home,
         watch_targets: plan.watch_targets,
+        git_index_paths: plan.git_index_paths,
     })
 }
 
@@ -479,6 +492,7 @@ fn read_codex_session_file_activity(
     }
 
     filter_written_files_by_git_status(cwd, &mut edited_files, &mut deleted_files);
+    remove_edited_files_from_read_files(cwd, &mut read_files, &edited_files);
 
     Ok(CodexSessionFileActivity {
         read_files: sort_file_activity(read_files),
@@ -662,6 +676,23 @@ fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> {
     entries.into_iter().map(|(path, _)| path).collect()
 }
 
+fn remove_edited_files_from_read_files(
+    cwd: Option<&str>,
+    read_files: &mut HashMap<String, u64>,
+    edited_files: &HashMap<String, u64>,
+) {
+    let edited_paths = edited_files
+        .keys()
+        .filter_map(|path| normalize_written_activity_path(path, cwd))
+        .collect::<HashSet<_>>();
+
+    read_files.retain(|path, _| {
+        normalize_written_activity_path(path, cwd)
+            .map(|normalized_path| !edited_paths.contains(&normalized_path))
+            .unwrap_or(true)
+    });
+}
+
 fn filter_written_files_by_git_status(
     cwd: Option<&str>,
     edited_files: &mut HashMap<String, u64>,
@@ -806,7 +837,37 @@ fn resolve_git_repo_root_from_path(search_root: &Path) -> Option<PathBuf> {
         return None;
     }
 
-    Some(PathBuf::from(trimmed))
+    let repo_root = PathBuf::from(trimmed);
+    Some(repo_root.canonicalize().unwrap_or(repo_root))
+}
+
+fn resolve_git_index_path(repo_root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("rev-parse")
+        .arg("--git-path")
+        .arg("index")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let index_path = String::from_utf8(output.stdout).ok()?;
+    let trimmed = index_path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let path = PathBuf::from(trimmed);
+    let index_path = if path.is_absolute() {
+        path
+    } else {
+        repo_root.join(path)
+    };
+    Some(PathBuf::from(normalize_absolute_activity_path(&index_path)))
 }
 
 fn normalize_title_whitespace(text: impl AsRef<str>) -> String {
@@ -889,6 +950,7 @@ fn create_watch_plan(runtime_home: &str) -> Result<SessionWatchPlan, String> {
     let sqlite_path = runtime_home_path.join("state_5.sqlite");
     let sqlite_wal_path = runtime_home_path.join("state_5.sqlite-wal");
     let history_path = runtime_home_path.join("history.jsonl");
+    let git_index_paths = collect_session_git_index_paths(&sessions_dir);
 
     let mut watch_targets = Vec::new();
     push_watch_target(
@@ -919,12 +981,59 @@ fn create_watch_plan(runtime_home: &str) -> Result<SessionWatchPlan, String> {
         sessions_dir.exists(),
         "watch rollout session trees".to_string(),
     );
+    for git_index_path in &git_index_paths {
+        push_watch_target(
+            &mut watch_targets,
+            existing_or_parent(git_index_path, &runtime_home_path),
+            false,
+            git_index_path.exists(),
+            "watch git index updates".to_string(),
+        );
+    }
 
     Ok(SessionWatchPlan {
         watch_id: watch_id_for_path(&runtime_home_path),
         runtime_home: runtime_home_path.display().to_string(),
         watch_targets,
+        git_index_paths: git_index_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
     })
+}
+
+fn collect_session_git_index_paths(sessions_dir: &Path) -> Vec<PathBuf> {
+    if !sessions_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut repo_roots = BTreeSet::<PathBuf>::new();
+    for entry in WalkDir::new(sessions_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+    {
+        let file_name = entry.file_name().to_string_lossy();
+        if !(file_name.starts_with("rollout-") && file_name.ends_with(".jsonl")) {
+            continue;
+        }
+
+        let Some(cwd) = read_session_meta_cwd(entry.path()) else {
+            continue;
+        };
+        let Some(repo_root) = resolve_git_repo_root_from_path(Path::new(&cwd)) else {
+            continue;
+        };
+
+        repo_roots.insert(repo_root);
+    }
+
+    repo_roots
+        .into_iter()
+        .map(|repo_root| {
+            resolve_git_index_path(&repo_root).unwrap_or_else(|| repo_root.join(".git/index"))
+        })
+        .collect()
 }
 
 fn push_watch_target(
@@ -986,6 +1095,15 @@ fn is_relevant_session_path(path: &Path, runtime_home: &Path) -> bool {
             .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(".jsonl"))
 }
 
+fn is_relevant_watch_path(path: &Path, runtime_home: &Path, git_index_paths: &[PathBuf]) -> bool {
+    is_relevant_session_path(path, runtime_home)
+        || git_index_paths.iter().any(|index_path| path == index_path)
+}
+
+fn normalize_watch_event_path(path: &Path) -> PathBuf {
+    PathBuf::from(normalize_absolute_activity_path(path))
+}
+
 fn emit_session_watch_event(app: &AppHandle, payload: SessionWatchEventPayload) {
     let _ = app.emit(SESSION_WATCH_EVENT, payload);
 }
@@ -1015,7 +1133,7 @@ mod tests {
     use super::{
         create_watch_plan, derive_session_title, is_metadata_prompt, is_relevant_session_path,
         normalize_title_whitespace, read_codex_session_file_activity, read_first_user_prompt_title,
-        SESSION_TITLE_MAX_CHARS,
+        resolve_git_index_path, SESSION_TITLE_MAX_CHARS,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -1074,6 +1192,61 @@ mod tests {
             .all(|target| target.path == canonical_temp_dir.display().to_string()));
 
         fs::remove_dir_all(temp_dir).expect("cleanup temp runtime home");
+    }
+
+    #[test]
+    fn watch_plan_includes_git_targets_for_session_cwds() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "coding-agent-va-session-git-watch-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        let runtime_home = temp_dir.join("codex-home");
+        let sessions_dir = runtime_home.join("sessions/2026/07/04");
+        let repo_dir = temp_dir.join("repo");
+        fs::create_dir_all(&sessions_dir).expect("create sessions directory");
+        fs::create_dir_all(&repo_dir).expect("create repo directory");
+
+        run_git(&repo_dir, &["init"]);
+        fs::write(repo_dir.join("tracked.txt"), "initial").expect("write repo file");
+        run_git(&repo_dir, &["config", "user.email", "codex@example.com"]);
+        run_git(&repo_dir, &["config", "user.name", "Codex"]);
+        run_git(&repo_dir, &["add", "."]);
+        run_git(&repo_dir, &["commit", "-m", "initial"]);
+
+        let rollout_path = sessions_dir.join("rollout-2026-07-04-test.jsonl");
+        let mut file = File::create(&rollout_path).expect("create rollout file");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {
+                    "cwd": repo_dir.display().to_string()
+                }
+            })
+        )
+        .expect("write session metadata");
+
+        let plan = create_watch_plan(runtime_home.to_str().expect("utf8 runtime home"))
+            .expect("build watch plan");
+        let repo_root = repo_dir.canonicalize().expect("canonical repo root");
+        let git_index_path = resolve_git_index_path(&repo_root).expect("resolve git index path");
+
+        assert!(plan
+            .git_index_paths
+            .contains(&git_index_path.display().to_string()));
+        assert!(!plan
+            .watch_targets
+            .iter()
+            .any(|target| target.path == repo_root.display().to_string()));
+        assert!(plan.watch_targets.iter().any(|target| {
+            target.path == git_index_path.display().to_string()
+                && target.reason == "watch git index updates"
+        }));
+
+        fs::remove_dir_all(temp_dir).expect("cleanup temp directory");
     }
 
     #[test]
@@ -1261,7 +1434,7 @@ mod tests {
                     "type": "function_call",
                     "name": "exec_command",
                     "arguments": serde_json::json!({
-                        "cmd": "sed -n '1,220p' src/App.tsx",
+                        "cmd": "sed -n '1,220p' src/App.tsx src/index.css",
                         "workdir": temp_dir.display().to_string()
                     }).to_string()
                 }

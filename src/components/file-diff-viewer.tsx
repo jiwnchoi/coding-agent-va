@@ -1,4 +1,4 @@
-import { DiffEditor } from "@monaco-editor/react";
+import { DiffEditor, Editor } from "@monaco-editor/react";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -27,12 +27,14 @@ export function FileDiffViewer({
   errorMessage,
   onClose,
   theme,
+  viewerMode,
 }: {
   diff: CodexSessionFileDiff | null;
   isLoading: boolean;
   errorMessage: string;
   onClose: () => void;
   theme: typeof SHIKI_LIGHT_THEME | typeof SHIKI_DARK_THEME;
+  viewerMode: "diff" | "read";
 }) {
   const [isMonacoReady, setIsMonacoReady] = useState(false);
   const [monacoErrorMessage, setMonacoErrorMessage] = useState("");
@@ -69,10 +71,14 @@ export function FileDiffViewer({
     <section className="border-border bg-background flex min-h-[32rem] flex-col overflow-hidden rounded-lg border">
       <div className="border-border bg-muted/30 flex items-center justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{diff?.displayPath ?? "Diff viewer"}</p>
+          <p className="truncate text-sm font-medium">
+            {diff?.displayPath ?? (viewerMode === "read" ? "Read viewer" : "Diff viewer")}
+          </p>
           <p className="text-muted-foreground truncate text-xs">
             {diff
-              ? `${diff.diffBaseLabel} -> ${diff.diffTargetLabel}${diff.isTracked ? "" : " (untracked)"}`
+              ? viewerMode === "read"
+                ? "Read-only workspace file"
+                : `${diff.diffBaseLabel} -> ${diff.diffTargetLabel}${diff.isTracked ? "" : " (untracked)"}`
               : "Select a file to inspect changes."}
           </p>
         </div>
@@ -84,7 +90,11 @@ export function FileDiffViewer({
       <div className="bg-muted/10 min-h-0 flex-1">
         {isLoading || !isMonacoReady ? (
           <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-            {isLoading ? "Loading diff..." : "Loading syntax highlighting..."}
+            {isLoading
+              ? viewerMode === "read"
+                ? "Loading file..."
+                : "Loading diff..."
+              : "Loading syntax highlighting..."}
           </div>
         ) : null}
         {!isLoading && isMonacoReady && (errorMessage || monacoErrorMessage) ? (
@@ -92,7 +102,36 @@ export function FileDiffViewer({
             <p className="text-muted-foreground text-sm">{errorMessage || monacoErrorMessage}</p>
           </div>
         ) : null}
-        {!isLoading && isMonacoReady && !errorMessage && !monacoErrorMessage && diff ? (
+        {!isLoading &&
+        isMonacoReady &&
+        !errorMessage &&
+        !monacoErrorMessage &&
+        diff &&
+        viewerMode === "read" ? (
+          <Editor
+            height="100%"
+            theme={theme}
+            language={language}
+            value={diff.modifiedContent}
+            path={`file://${diff.filePath}?side=read`}
+            options={{
+              readOnly: true,
+              automaticLayout: true,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+              fontSize: 13,
+              glyphMargin: false,
+              lineNumbersMinChars: 3,
+            }}
+          />
+        ) : null}
+        {!isLoading &&
+        isMonacoReady &&
+        !errorMessage &&
+        !monacoErrorMessage &&
+        diff &&
+        viewerMode === "diff" ? (
           <DiffEditor
             height="100%"
             theme={theme}

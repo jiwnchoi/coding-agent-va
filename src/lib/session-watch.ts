@@ -15,6 +15,16 @@ export type CodexSessionList = {
 
 export type SessionWatchRegistration = {
   watchId: string;
+  runtimeHome: string;
+  watchTargets: SessionWatchTarget[];
+  gitIndexPaths: string[];
+};
+
+export type SessionWatchTarget = {
+  path: string;
+  recursive: boolean;
+  exists: boolean;
+  reason: string;
 };
 
 export type CodexSessionFileActivity = {
@@ -23,14 +33,17 @@ export type CodexSessionFileActivity = {
   deletedFiles: string[];
 };
 
+export type ActivitySectionKey = "read" | "edited" | "deleted";
+
 export type ActivitySection = {
-  key: string;
+  key: ActivitySectionKey;
   title: string;
   icon: typeof Eye;
   files: string[];
 };
 
 export type SelectedActivityFile = {
+  activityKey: ActivitySectionKey;
   filePath: string;
 };
 
