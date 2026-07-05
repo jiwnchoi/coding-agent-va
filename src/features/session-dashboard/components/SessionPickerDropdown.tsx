@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { CodexSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/lib/session-watch";
 
 export function SessionPickerDropdown({
   nowMs,
@@ -22,7 +22,7 @@ export function SessionPickerDropdown({
 }: {
   nowMs: number;
   searchQuery: string;
-  sessions: CodexSessionSummary[];
+  sessions: AgentSessionSummary[];
   setSearchQuery: (value: string) => void;
   onSelectSession: (sessionId: string) => void;
 }) {
@@ -79,7 +79,7 @@ export function SessionPickerDropdown({
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{session.title}</span>
                   <span className="text-muted-foreground truncate text-xs">
-                    {session.cwd ?? session.rolloutPath}
+                    {session.providerLabel} · {session.cwd ?? session.transcriptPath}
                   </span>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export function SessionPickerDropdown({
           );
         })}
         {sessions.length === 0 ? (
-          <DropdownMenuItem disabled>No Codex sessions found</DropdownMenuItem>
+          <DropdownMenuItem disabled>No agent sessions found</DropdownMenuItem>
         ) : null}
         {sessions.length > 0 && !hasSearchResults ? (
           <DropdownMenuItem disabled>No matching sessions</DropdownMenuItem>

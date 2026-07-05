@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { CodexSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/lib/session-watch";
 import { cn } from "@/lib/utils";
 
 export function SessionTabBar({
@@ -12,7 +12,7 @@ export function SessionTabBar({
   onSelectSession,
 }: {
   nowMs: number;
-  openSessions: CodexSessionSummary[];
+  openSessions: AgentSessionSummary[];
   selectedSessionId: string;
   onCloseSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;

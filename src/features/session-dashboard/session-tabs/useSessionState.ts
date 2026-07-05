@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { CodexSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/lib/session-watch";
 
 import { closeSessionTab, reconcileTabState, updateSessionHistory } from "./session-tab-utils";
 
 export function useSessionState() {
-  const [sessions, setSessions] = useState<CodexSessionSummary[]>([]);
+  const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
   const [openSessionIds, setOpenSessionIds] = useState<string[]>([]);
   const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
@@ -86,7 +86,7 @@ export function useSessionState() {
   );
 
   const reconcileSessions = useCallback(
-    (nextSessions: CodexSessionSummary[], currentNowMs: number) => {
+    (nextSessions: AgentSessionSummary[], currentNowMs: number) => {
       const {
         activeSessionIds,
         nextDismissedSessionIds,

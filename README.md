@@ -26,6 +26,12 @@ just prepare
 just check
 ```
 
+## Agent Session Providers
+
+The desktop app can inspect Codex, Claude Code, and Pi Agent session transcripts through a provider protocol layer.
+
+- See `docs/AGENT_SESSION_PROTOCOLS.md` for the backend protocol contract and extension steps.
+
 ### Common Commands
 
 ```bash

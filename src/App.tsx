@@ -26,8 +26,10 @@ import type { KeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import { useKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import {
   buildActivitySections,
-  type CodexSessionList,
-  type CodexSessionSummary,
+  formatRuntimeSources,
+  type AgentRuntimeSource,
+  type AgentSessionList,
+  type AgentSessionSummary,
   type SelectedActivityFile,
   type SessionWatchRegistration,
 } from "@/lib/session-watch";
@@ -36,7 +38,7 @@ import { useSessionFileActivity } from "@/lib/useSessionFileActivity";
 import { useSessionFileDiff } from "@/lib/useSessionFileDiff";
 
 function App() {
-  const [runtimeHome, setRuntimeHome] = useState<string>("");
+  const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
   const {
     sessions,
     openSessionIds,
@@ -60,7 +62,7 @@ function App() {
   const editorTheme = useEditorTheme();
   const openSessions = openSessionIds
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
-    .filter((session): session is CodexSessionSummary => session !== null);
+    .filter((session): session is AgentSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const { fileActivity, isFileActivityLoading } = useSessionFileActivity(
     selectedSession,
@@ -71,6 +73,7 @@ function App() {
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
   const activitySections = buildActivitySections(fileActivity);
+  const runtimeLabel = formatRuntimeSources(runtimeSources);
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
@@ -136,12 +139,12 @@ function App() {
     let disposed = false;
 
     async function loadSessions() {
-      const result = await invoke<CodexSessionList>("list_codex_sessions");
+      const result = await invoke<AgentSessionList>("list_agent_sessions");
       if (disposed) {
         return;
       }
 
-      setRuntimeHome(result.runtimeHome);
+      setRuntimeSources(result.sources);
       reconcileSessions(result.sessions, Date.now());
       setIsLoading(false);
     }
@@ -167,40 +170,57 @@ function App() {
   }, [reconcileSessions, sessionsRef]);
 
   useEffect(() => {
-    if (!runtimeHome) {
-      return;
-    }
+    const availableSources = runtimeSources.filter((source) => source.available);
 
-    let activeWatchId = "";
-
-    async function startWatch() {
-      const registration = await invoke<SessionWatchRegistration>("start_codex_session_watch", {
-        runtimeHome,
-      });
-      activeWatchId = registration.watchId;
-      setWatchId(registration.watchId);
-    }
-
-    void startWatch();
-
-    return () => {
-      if (!activeWatchId) {
-        return;
-      }
-
-      void invoke("stop_codex_session_watch", { watchId: activeWatchId });
-    };
-  }, [runtimeHome]);
-
-  useEffect(() => {
-    if (!runtimeHome) {
+    if (availableSources.length === 0) {
       return;
     }
 
     let disposed = false;
+    const activeWatchIds: string[] = [];
+
+    async function startWatches() {
+      const registrationResults = await Promise.allSettled(
+        availableSources.map((source) =>
+          invoke<SessionWatchRegistration>("start_agent_session_watch", {
+            provider: source.provider,
+            runtimeHome: source.runtimeHome,
+          })
+        )
+      );
+
+      for (const result of registrationResults) {
+        if (result.status === "fulfilled") {
+          activeWatchIds.push(result.value.watchId);
+        }
+      }
+
+      if (!disposed) {
+        setWatchId(activeWatchIds.join(","));
+      }
+    }
+
+    void startWatches();
+
+    return () => {
+      disposed = true;
+
+      for (const activeWatchId of activeWatchIds) {
+        void invoke("stop_agent_session_watch", { watchId: activeWatchId });
+      }
+    };
+  }, [runtimeSources]);
+
+  useEffect(() => {
+    if (!watchId) {
+      return;
+    }
+
+    let disposed = false;
+    const activeWatchIds = new Set(watchId.split(",").filter(Boolean));
 
     async function refreshSessions() {
-      const result = await invoke<CodexSessionList>("list_codex_sessions", { runtimeHome });
+      const result = await invoke<AgentSessionList>("list_agent_sessions");
       if (disposed) {
         return;
       }
@@ -209,10 +229,10 @@ function App() {
       setFileActivityRefreshVersion((currentVersion) => currentVersion + 1);
     }
 
-    const unlistenPromise = listen("codex-session-watch-event", async (event) => {
+    const unlistenPromise = listen("agent-session-watch-event", async (event) => {
       const payload = event.payload as { watchId?: string };
 
-      if (payload.watchId !== watchId) {
+      if (!payload.watchId || !activeWatchIds.has(payload.watchId)) {
         return;
       }
 
@@ -223,7 +243,7 @@ function App() {
       disposed = true;
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [reconcileSessions, runtimeHome, watchId]);
+  }, [reconcileSessions, watchId]);
 
   useKeyboardShortcuts(shortcuts);
 
@@ -263,11 +283,12 @@ function App() {
           <Card className="app-main-panel w-full shadow-sm">
             <CardHeader>
               <CardTitle>{selectedSessionLabel}</CardTitle>
-              <CardDescription>현재 선택된 Codex Session의 파일 활동입니다.</CardDescription>
+              <CardDescription>현재 선택된 Agent Session의 파일 활동입니다.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
-                <span>runtime home: {runtimeHome || "~/.codex"}</span>
+                <span>runtime homes: {runtimeLabel}</span>
+                <span>provider: {selectedSession?.providerLabel ?? "Unknown"}</span>
                 <span>workspace: {selectedSession?.cwd ?? "Unknown"}</span>
               </div>
               <FileActivityPanels
@@ -280,7 +301,7 @@ function App() {
             <CardFooter className="text-muted-foreground justify-between text-sm">
               <span>
                 Read, edited, deleted, and Tree-sitter-derived impacted files are shown for the
-                selected session.
+                selected agent session.
               </span>
               <span>
                 {selectedSession ? new Date(selectedSession.updatedAtMs).toLocaleTimeString() : ""}

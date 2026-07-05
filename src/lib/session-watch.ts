@@ -1,20 +1,34 @@
-import { Eye, FilePenLine, Link2, Trash2 } from "lucide-react";
+import { Bot, Eye, FilePenLine, Link2, Trash2 } from "lucide-react";
 
-export type CodexSessionSummary = {
+export type AgentSessionProvider = "codex" | "claude" | "pi";
+
+export type AgentRuntimeSource = {
+  provider: AgentSessionProvider;
+  label: string;
+  runtimeHome: string;
+  available: boolean;
+};
+
+export type AgentSessionSummary = {
   id: string;
+  provider: AgentSessionProvider;
+  providerSessionId: string;
+  providerLabel: string;
   title: string;
-  rolloutPath: string;
+  transcriptPath: string;
   cwd: string | null;
+  runtimeHome: string;
   updatedAtMs: number;
 };
 
-export type CodexSessionList = {
-  runtimeHome: string;
-  sessions: CodexSessionSummary[];
+export type AgentSessionList = {
+  sources: AgentRuntimeSource[];
+  sessions: AgentSessionSummary[];
 };
 
 export type SessionWatchRegistration = {
   watchId: string;
+  provider: AgentSessionProvider;
   runtimeHome: string;
   watchTargets: SessionWatchTarget[];
   gitIndexPaths: string[];
@@ -27,7 +41,7 @@ export type SessionWatchTarget = {
   reason: string;
 };
 
-export type CodexSessionFileActivity = {
+export type AgentSessionFileActivity = {
   readFiles: string[];
   editedFiles: string[];
   impactedFiles: string[];
@@ -48,7 +62,7 @@ export type SelectedActivityFile = {
   filePath: string;
 };
 
-export type CodexSessionFileDiff = {
+export type AgentSessionFileDiff = {
   filePath: string;
   displayPath: string;
   originalContent: string;
@@ -59,11 +73,25 @@ export type CodexSessionFileDiff = {
   isTracked: boolean;
 };
 
-export function buildActivitySections(fileActivity: CodexSessionFileActivity): ActivitySection[] {
+export function buildActivitySections(fileActivity: AgentSessionFileActivity): ActivitySection[] {
   return [
     { key: "read", title: "Read", icon: Eye, files: fileActivity.readFiles },
     { key: "edited", title: "Edited", icon: FilePenLine, files: fileActivity.editedFiles },
     { key: "impacted", title: "Impacted", icon: Link2, files: fileActivity.impactedFiles },
     { key: "deleted", title: "Deleted", icon: Trash2, files: fileActivity.deletedFiles },
   ];
+}
+
+export function formatRuntimeSources(sources: AgentRuntimeSource[]) {
+  const availableSources = sources.filter((source) => source.available);
+
+  if (availableSources.length === 0) {
+    return "No agent runtime homes found";
+  }
+
+  return availableSources.map((source) => `${source.label}: ${source.runtimeHome}`).join(" · ");
+}
+
+export function providerIcon() {
+  return Bot;
 }
