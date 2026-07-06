@@ -1,5 +1,8 @@
-import type { ActivitySection, SelectedActivityFile } from "@/lib/session-watch";
-import { cn } from "@/lib/utils";
+import type {
+  ActivitySection,
+  SelectedActivityFile,
+} from "@/features/session-dashboard/lib/session-watch";
+import { cn } from "@/shared/lib/utils";
 
 export function FileActivityPanels({
   isLoading,

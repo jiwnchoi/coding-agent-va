@@ -1,8 +1,15 @@
-import type { ActivitySectionKey } from "@/lib/session-watch";
+import type { ActivitySectionKey } from "@/features/session-dashboard/lib/session-watch";
 
+import { buildActivityByPath, buildChildActivityCounts } from "./contextGraphActivity";
+import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
+import styles from "./ContextGraphView.module.css";
+import {
+  collectVisibleNodeIds,
+  expandHiddenRootChildren,
+  isVisibleGraphNode,
+} from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
-  ArchitectureGraph,
   ArchitectureNode,
   ContextGraphBuildOptions,
   ContextGraphEdge,
@@ -12,7 +19,8 @@ import type {
 } from "./types";
 
 const CONTEXT_NODE_TYPE = "contextGraphNode" as const;
-const ACTIVITY_ORDER: ActivitySectionKey[] = ["impacted", "edited", "deleted", "read"];
+const IMPACT_EDGE_COLOR = "#ff7f0e";
+const IMPACT_EDGE_MARKER_SIZE = 8;
 
 export function buildContextGraph(options: ContextGraphBuildOptions): ContextGraphModel {
   const architectureGraph = options.architectureGraph;
@@ -59,6 +67,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     fileNodeIdByPathKey,
     includeEntireWorkspace: options.includeEntireWorkspace,
   });
+  expandHiddenRootChildren(architectureGraph, visibleNodeIds);
 
   const childActivityCountByNodeId = buildChildActivityCounts(
     architectureGraph,
@@ -69,7 +78,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   );
 
   const nodes = architectureGraph.nodes
-    .filter((node) => isRenderableNode(node))
+    .filter((node) => isVisibleGraphNode(node))
     .filter((node) => visibleNodeIds.has(node.id))
     .map((node) =>
       toContextGraphNode({
@@ -85,6 +94,12 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   const containsEdges = architectureGraph.edges
     .filter((edge) => edge.kind === "contains")
     .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+    .filter((edge) => {
+      const source = nodeById.get(edge.source);
+      const target = nodeById.get(edge.target);
+
+      return Boolean(source && target && isVisibleGraphNode(source) && isVisibleGraphNode(target));
+    })
     .map(toContainsEdge);
 
   const impactEdges = options.fileActivity.impactedRelations
@@ -100,168 +115,42 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
 
       const isHighlighted = selectedFilePath === changedFile || selectedFilePath === impactedFile;
 
+      const edgeId = `impact:${source}->${target}:${relation.importSpecifier}`;
+
       return {
-        id: `impact:${source}->${target}:${relation.importSpecifier}`,
+        id: edgeId,
         source,
         target,
         animated: isHighlighted,
-        className: isHighlighted
-          ? "context-graph-impact-edge-highlighted"
-          : "context-graph-impact-edge",
+        className: isHighlighted ? styles.highlightedImpactEdge : styles.impactEdge,
         data: {
           kind: "impact",
           importSpecifier: relation.importSpecifier,
           isHighlighted,
         },
-        label: relation.importSpecifier,
         markerEnd: {
+          color: IMPACT_EDGE_COLOR,
+          height: IMPACT_EDGE_MARKER_SIZE,
+          strokeWidth: 1.5,
           type: "arrowclosed",
+          width: IMPACT_EDGE_MARKER_SIZE,
         },
-        type: "smoothstep",
+        type: "contextGraphImpactEdge",
+        zIndex: 20,
       };
     })
     .filter((edge): edge is ContextGraphEdge => edge !== null);
+  const nodeIds = new Set(nodes.map((node) => node.id));
 
   return {
     nodes,
-    containsEdges,
-    impactEdges,
+    containsEdges: containsEdges.filter(
+      (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)
+    ),
+    impactEdges: impactEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
     activity: options.fileActivity,
     impactedRelations: options.fileActivity.impactedRelations,
   };
-}
-
-function buildActivityByPath(
-  fileActivity: ContextGraphBuildOptions["fileActivity"],
-  workspacePath: string
-) {
-  const activityByPath = new Map<string, ActivitySectionKey[]>();
-
-  addActivity(activityByPath, fileActivity.readFiles, "read", workspacePath);
-  addActivity(activityByPath, fileActivity.editedFiles, "edited", workspacePath);
-  addActivity(activityByPath, fileActivity.impactedFiles, "impacted", workspacePath);
-  addActivity(activityByPath, fileActivity.deletedFiles, "deleted", workspacePath);
-
-  for (const [filePath, activities] of activityByPath) {
-    activities.sort((left, right) => ACTIVITY_ORDER.indexOf(left) - ACTIVITY_ORDER.indexOf(right));
-    activityByPath.set(filePath, [...new Set(activities)]);
-  }
-
-  return activityByPath;
-}
-
-function addActivity(
-  activityByPath: Map<string, ActivitySectionKey[]>,
-  filePaths: string[],
-  activity: ActivitySectionKey,
-  workspacePath: string
-) {
-  for (const filePath of filePaths) {
-    const pathKey = normalizeWorkspacePath(filePath, workspacePath);
-    const activities = activityByPath.get(pathKey) ?? [];
-    activities.push(activity);
-    activityByPath.set(pathKey, activities);
-  }
-}
-
-function collectVisibleNodeIds({
-  activeFilePaths,
-  architectureGraph,
-  fileNodeIdByPathKey,
-  includeEntireWorkspace,
-}: {
-  activeFilePaths: Set<string>;
-  architectureGraph: ArchitectureGraph;
-  fileNodeIdByPathKey: Map<string, string>;
-  includeEntireWorkspace: boolean;
-}) {
-  const visibleNodeIds = new Set<string>();
-  const parentByChildId = new Map<string, string>();
-
-  for (const edge of architectureGraph.edges) {
-    if (edge.kind === "contains") {
-      parentByChildId.set(edge.target, edge.source);
-    }
-  }
-
-  if (includeEntireWorkspace) {
-    for (const node of architectureGraph.nodes) {
-      if (isRenderableNode(node)) {
-        visibleNodeIds.add(node.id);
-      }
-    }
-    return visibleNodeIds;
-  }
-
-  for (const filePath of activeFilePaths) {
-    const fileNodeId = fileNodeIdByPathKey.get(filePath);
-
-    if (!fileNodeId) {
-      continue;
-    }
-
-    let currentNodeId: string | undefined = fileNodeId;
-    while (currentNodeId) {
-      visibleNodeIds.add(currentNodeId);
-      currentNodeId = parentByChildId.get(currentNodeId);
-    }
-  }
-
-  if (visibleNodeIds.size === 0) {
-    for (const node of architectureGraph.nodes) {
-      if (node.kind === "repo") {
-        visibleNodeIds.add(node.id);
-      }
-    }
-  }
-
-  return visibleNodeIds;
-}
-
-function buildChildActivityCounts(
-  architectureGraph: ArchitectureGraph,
-  visibleNodeIds: Set<string>,
-  nodeById: Map<string, ArchitectureNode>,
-  workspacePath: string,
-  activityByPath: Map<string, ActivitySectionKey[]>
-) {
-  const childActivityCountByNodeId = new Map<string, number>();
-  const parentByChildId = new Map<string, string>();
-
-  for (const edge of architectureGraph.edges) {
-    if (edge.kind === "contains") {
-      parentByChildId.set(edge.target, edge.source);
-    }
-  }
-
-  for (const [filePath, activities] of activityByPath) {
-    if (activities.length === 0) {
-      continue;
-    }
-
-    const fileNode = architectureGraph.nodes.find(
-      (node) => node.kind === "file" && displayPathForNode(node, workspacePath) === filePath
-    );
-    let currentNodeId = fileNode?.id;
-
-    while (currentNodeId) {
-      if (visibleNodeIds.has(currentNodeId)) {
-        childActivityCountByNodeId.set(
-          currentNodeId,
-          (childActivityCountByNodeId.get(currentNodeId) ?? 0) + 1
-        );
-      }
-      currentNodeId = parentByChildId.get(currentNodeId);
-    }
-  }
-
-  for (const nodeId of childActivityCountByNodeId.keys()) {
-    if (!nodeById.has(nodeId)) {
-      childActivityCountByNodeId.delete(nodeId);
-    }
-  }
-
-  return childActivityCountByNodeId;
 }
 
 function toContextGraphNode({
@@ -283,7 +172,7 @@ function toContextGraphNode({
     id: node.id,
     position: { x: 0, y: 0 },
     type: CONTEXT_NODE_TYPE,
-    className: isSelected ? "context-graph-node-selected" : undefined,
+    className: isSelected ? styles.selectedNode : undefined,
     data: {
       activities,
       childActivityCount,
@@ -302,62 +191,11 @@ function toContainsEdge(edge: ArchitectureEdge): ContextGraphEdge {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    className: "context-graph-contains-edge",
+    className: styles.containsEdge,
     data: {
       kind: "contains",
       isHighlighted: false,
     },
-    markerEnd: {
-      type: "arrowclosed",
-    },
-    type: "smoothstep",
+    type: "straight",
   };
-}
-
-function isRenderableNode(node: ArchitectureNode) {
-  return node.kind === "repo" || node.kind === "directory" || node.kind === "file";
-}
-
-function displayPathForNode(node: ArchitectureNode, workspacePath: string) {
-  if (!node.path) {
-    return node.label;
-  }
-
-  const normalizedWorkspacePath = workspacePath.replace(/\/+$/, "");
-  const normalizedNodePath = node.path.replace(/\/+$/, "");
-  const prefix = `${normalizedWorkspacePath}/`;
-
-  if (normalizedNodePath === normalizedWorkspacePath) {
-    return ".";
-  }
-
-  if (normalizedNodePath.startsWith(prefix)) {
-    return normalizedNodePath.slice(prefix.length);
-  }
-
-  return node.path;
-}
-
-function normalizeWorkspacePath(filePath: string, workspacePath: string) {
-  if (!filePath) {
-    return filePath;
-  }
-
-  const normalizedWorkspacePath = normalizeSlashes(workspacePath).replace(/\/+$/, "");
-  const normalizedFilePath = normalizeSlashes(filePath).replace(/\/+$/, "");
-  const prefix = `${normalizedWorkspacePath}/`;
-
-  if (normalizedFilePath === normalizedWorkspacePath) {
-    return ".";
-  }
-
-  if (normalizedFilePath.startsWith(prefix)) {
-    return normalizedFilePath.slice(prefix.length);
-  }
-
-  return normalizedFilePath.replace(/^\.\//, "");
-}
-
-function normalizeSlashes(path: string) {
-  return path.replace(/\\/g, "/");
 }

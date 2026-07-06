@@ -1,8 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildShortcuts,
   buildTabNumberShortcutActions,
@@ -12,17 +10,21 @@ import {
   SessionContextGraphView,
   SessionPickerDropdown,
   SessionTabBar,
+  useAgentSessionWatchRefresh,
+  useAgentSessionWatches,
   useSessionState,
 } from "@/features/session-dashboard";
-import type { KeyboardShortcut } from "@/lib/keyboard-shortcuts";
-import { useKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
+import { useSessionFileActivity } from "@/features/session-dashboard/hooks/useSessionFileActivity";
 import {
   type AgentRuntimeSource,
   type AgentSessionList,
   type AgentSessionSummary,
-  type SessionWatchRegistration,
-} from "@/lib/session-watch";
-import { useSessionFileActivity } from "@/lib/useSessionFileActivity";
+} from "@/features/session-dashboard/lib/session-watch";
+import type { KeyboardShortcut } from "@/shared/hooks/useKeyboardShortcuts";
+import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
+import { cn } from "@/shared/lib/utils";
+
+import styles from "./App.module.css";
 
 function App() {
   const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
@@ -38,11 +40,11 @@ function App() {
     handleCloseSession,
     reconcileSessions,
   } = useSessionState();
-  const [watchId, setWatchId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
+  const watchRegistrations = useAgentSessionWatches(runtimeSources);
   const openSessions = openSessionIds
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
     .filter((session): session is AgentSessionSummary => session !== null);
@@ -127,91 +129,30 @@ function App() {
     };
   }, [reconcileSessions, sessionsRef]);
 
-  useEffect(() => {
-    const availableSources = runtimeSources.filter((source) => source.available);
-
-    if (availableSources.length === 0) {
-      return;
-    }
-
-    let disposed = false;
-    const activeWatchIds: string[] = [];
-
-    async function startWatches() {
-      const registrationResults = await Promise.allSettled(
-        availableSources.map((source) =>
-          invoke<SessionWatchRegistration>("start_agent_session_watch", {
-            provider: source.provider,
-            runtimeHome: source.runtimeHome,
-          })
-        )
-      );
-
-      for (const result of registrationResults) {
-        if (result.status === "fulfilled") {
-          activeWatchIds.push(result.value.watchId);
-        }
-      }
-
-      if (!disposed) {
-        setWatchId(activeWatchIds.join(","));
-      }
-    }
-
-    void startWatches();
-
-    return () => {
-      disposed = true;
-
-      for (const activeWatchId of activeWatchIds) {
-        void invoke("stop_agent_session_watch", { watchId: activeWatchId });
-      }
-    };
-  }, [runtimeSources]);
-
-  useEffect(() => {
-    if (!watchId) {
-      return;
-    }
-
-    let disposed = false;
-    const activeWatchIds = new Set(watchId.split(",").filter(Boolean));
-
-    async function refreshSessions() {
-      const result = await invoke<AgentSessionList>("list_agent_sessions");
-      if (disposed) {
-        return;
-      }
-
-      reconcileSessions(result.sessions, Date.now());
-      setFileActivityRefreshVersion((currentVersion) => currentVersion + 1);
-    }
-
-    const unlistenPromise = listen("agent-session-watch-event", async (event) => {
-      const payload = event.payload as { watchId?: string };
-
-      if (!payload.watchId || !activeWatchIds.has(payload.watchId)) {
-        return;
-      }
-
-      await refreshSessions();
-    });
-
-    return () => {
-      disposed = true;
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [reconcileSessions, watchId]);
+  useAgentSessionWatchRefresh(
+    watchRegistrations,
+    reconcileSessions,
+    sessionsRef,
+    selectedSessionIdRef,
+    setFileActivityRefreshVersion
+  );
 
   useKeyboardShortcuts(shortcuts);
 
   return (
-    <div className="bg-background text-foreground relative min-h-screen">
+    <div
+      className={cn(
+        styles.appShell,
+        "bg-background text-foreground relative h-screen overflow-hidden"
+      )}>
       <header
         data-tauri-drag-region
         onMouseDown={handleTitlebarMouseDown}
-        className="app-window-titlebar bg-background/90 fixed inset-x-0 top-0 z-20 backdrop-blur">
-        <div className="flex h-10 w-full items-center gap-2 pr-3 pl-18 sm:pr-4 sm:pl-20">
+        className={cn(
+          styles.windowTitlebar,
+          "bg-background/90 fixed inset-x-0 top-0 z-20 backdrop-blur"
+        )}>
+        <div className="flex h-full w-full items-center gap-2 pr-3 pl-18 sm:pr-4 sm:pl-20">
           <div className="shrink-0">
             <SessionPickerDropdown
               nowMs={nowMs}
@@ -232,23 +173,21 @@ function App() {
           </div>
         </div>
       </header>
-      <main className="px-6 pt-12 pb-6">
-        <div className="app-main-panels mx-auto flex w-full max-w-[72rem] gap-6">
-          <Card className="app-main-panel w-full shadow-sm">
-            <CardHeader>
-              <CardTitle>{selectedSessionLabel}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SessionContextGraphView
-                fileActivity={fileActivity}
-                isFileActivityLoading={isFileActivityLoading}
-                selectedActivityFile={null}
-                selectedSession={selectedSession}
-                onSelectFile={() => {}}
-              />
-            </CardContent>
-          </Card>
+      <main className={cn(styles.main, "relative h-full min-h-0")}>
+        <div
+          className={cn(
+            styles.contextGraphTitle,
+            "border-border text-card-foreground absolute left-4 z-[6] truncate rounded-lg border px-3 py-2.5 text-sm leading-5 font-medium"
+          )}>
+          {selectedSessionLabel}
         </div>
+        <SessionContextGraphView
+          fileActivity={fileActivity}
+          isFileActivityLoading={isFileActivityLoading || isLoading}
+          selectedActivityFile={null}
+          selectedSession={selectedSession}
+          onSelectFile={() => {}}
+        />
       </main>
     </div>
   );

@@ -6,5 +6,9 @@ export {
   SessionTabBar,
 } from "./components";
 export { buildShortcuts, buildTabNumberShortcutActions } from "./keyboard-shortcuts";
+export {
+  useAgentSessionWatchRefresh,
+  useAgentSessionWatches,
+} from "./hooks/useAgentSessionWatches";
 export { rotateSession, selectMostRecentlyActiveSession, useSessionState } from "./session-tabs";
 export { handleTitlebarMouseDown } from "./window-titlebar";

@@ -1,6 +1,8 @@
 import { ChevronDown, Search } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
+import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
+import { Button } from "@/shared/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,10 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { AgentSessionSummary } from "@/lib/session-watch";
+} from "@/shared/components/ui/dropdown-menu";
+import { Input } from "@/shared/components/ui/input";
 
 export function SessionPickerDropdown({
   nowMs,

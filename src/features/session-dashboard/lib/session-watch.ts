@@ -1,6 +1,6 @@
 import { Bot, Eye, FilePenLine, Link2, Trash2 } from "lucide-react";
 
-import type { AgentRuntimeSource, AgentSessionFileActivity } from "./generated/bindings";
+import type { AgentRuntimeSource, AgentSessionFileActivity } from "@/shared/lib/generated/bindings";
 
 export type {
   AgentRuntimeSource,
@@ -14,7 +14,7 @@ export type {
   SessionWatchPlan,
   SessionWatchRegistration,
   SessionWatchTarget,
-} from "./generated/bindings";
+} from "@/shared/lib/generated/bindings";
 
 export type ActivitySectionKey = "read" | "edited" | "impacted" | "deleted";
 

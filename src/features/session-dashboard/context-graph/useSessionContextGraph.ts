@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
-import type { AgentSessionFileActivity, AgentSessionSummary } from "@/lib/session-watch";
+import type {
+  AgentSessionFileActivity,
+  AgentSessionSummary,
+} from "@/features/session-dashboard/lib/session-watch";
 
 import { buildContextGraph } from "./buildContextGraph";
 import { layoutContextGraphWithHierarchy } from "./layoutContextGraphWithHierarchy";
@@ -20,20 +23,27 @@ export function useSessionContextGraph({
   selectedFilePath: string;
   selectedSession: AgentSessionSummary | null;
 }) {
-  const [architectureGraph, setArchitectureGraph] = useState<ArchitectureGraph | null>(null);
+  const workspacePath = selectedSession?.cwd ?? null;
+  const sessionId = selectedSession?.id ?? null;
+  const [indexedArchitectureGraph, setIndexedArchitectureGraph] = useState<{
+    graph: ArchitectureGraph;
+    workspacePath: string;
+  } | null>(null);
   const [contextGraph, setContextGraph] = useState<ContextGraphModel | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [isIndexing, setIsIndexing] = useState(false);
   const [isLayouting, setIsLayouting] = useState(false);
+  const architectureGraph =
+    indexedArchitectureGraph?.workspacePath === workspacePath
+      ? indexedArchitectureGraph.graph
+      : null;
 
   useEffect(() => {
-    if (!selectedSession?.cwd) {
-      setArchitectureGraph(null);
-      setErrorMessage("");
+    if (!workspacePath) {
       return;
     }
 
-    const currentSession = selectedSession;
+    const currentWorkspacePath = workspacePath;
     let disposed = false;
 
     async function indexWorkspace() {
@@ -42,15 +52,15 @@ export function useSessionContextGraph({
 
       try {
         const graph = await invoke<ArchitectureGraph>("index_workspace_graph", {
-          workspacePath: currentSession.cwd,
+          workspacePath: currentWorkspacePath,
         });
 
         if (!disposed) {
-          setArchitectureGraph(graph);
+          setIndexedArchitectureGraph({ graph, workspacePath: currentWorkspacePath });
         }
       } catch (error) {
         if (!disposed) {
-          setArchitectureGraph(null);
+          setIndexedArchitectureGraph(null);
           setErrorMessage(error instanceof Error ? error.message : String(error));
         }
       } finally {
@@ -65,7 +75,7 @@ export function useSessionContextGraph({
     return () => {
       disposed = true;
     };
-  }, [selectedSession?.cwd, selectedSession?.id]);
+  }, [sessionId, workspacePath]);
 
   useEffect(() => {
     let disposed = false;
@@ -77,7 +87,7 @@ export function useSessionContextGraph({
         includeEntireWorkspace,
         pinnedFilePaths,
         selectedFilePath,
-        workspacePath: selectedSession?.cwd ?? null,
+        workspacePath,
       });
 
       setIsLayouting(true);
@@ -111,7 +121,7 @@ export function useSessionContextGraph({
     includeEntireWorkspace,
     pinnedFilePaths,
     selectedFilePath,
-    selectedSession?.cwd,
+    workspacePath,
   ]);
 
   return {

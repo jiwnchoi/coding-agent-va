@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { Resizable } from "react-resizable";
 
-import { FileDiffViewer } from "@/components/file-diff-viewer";
+import { FileDiffViewer } from "@/features/session-dashboard/components/FileDiffViewer";
 import {
   DEFAULT_DIFF_PANEL_WIDTH,
   MIN_DIFF_PANEL_WIDTH,
   WIDE_LAYOUT_MEDIA_QUERY,
 } from "@/features/session-dashboard/constants";
 import { useMediaQuery } from "@/features/session-dashboard/hooks/useMediaQuery";
+import type { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import { useViewportWidth } from "@/features/session-dashboard/hooks/useViewportWidth";
 import { clampNumber, getMaxDiffPanelWidth } from "@/features/session-dashboard/layout";
-import type { SelectedActivityFile } from "@/lib/session-watch";
-import type { useEditorTheme } from "@/lib/useEditorTheme";
-import type { useSessionFileDiff } from "@/lib/useSessionFileDiff";
+import type { SelectedActivityFile } from "@/features/session-dashboard/lib/session-watch";
+import type { useEditorTheme } from "@/shared/hooks/useEditorTheme";
+import { cn } from "@/shared/lib/utils";
+
+import styles from "./SessionFileViewer.module.css";
 
 export function SessionFileViewer({
   errorMessage,
@@ -86,7 +89,10 @@ export function SessionFileViewer({
   if (!isWideLayout) {
     return (
       <div
-        className="app-diff-modal"
+        className={cn(
+          styles.modal,
+          "fixed inset-0 z-30 flex items-stretch px-3 pt-13 pb-3 backdrop-blur-[10px] sm:px-6 sm:pt-16 sm:pb-6"
+        )}
         role="dialog"
         aria-modal="true"
         onMouseDown={(event) => {
@@ -94,7 +100,7 @@ export function SessionFileViewer({
             onClose();
           }
         }}>
-        <div className="app-diff-modal-panel">{diffViewer}</div>
+        <div className={cn(styles.modalPanel, "flex min-h-0 w-full")}>{diffViewer}</div>
       </div>
     );
   }
@@ -110,7 +116,9 @@ export function SessionFileViewer({
       onResize={(_event, data) => {
         setDiffPanelWidth(clampNumber(data.size.width, MIN_DIFF_PANEL_WIDTH, maxDiffPanelWidth));
       }}>
-      <div className="app-diff-panel" style={{ width: resolvedDiffPanelWidth }}>
+      <div
+        className={cn(styles.diffPanel, "flex min-w-0 flex-none opacity-0")}
+        style={{ width: resolvedDiffPanelWidth }}>
         {diffViewer}
       </div>
     </Resizable>

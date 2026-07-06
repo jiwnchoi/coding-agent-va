@@ -2,14 +2,16 @@ import { DiffEditor, Editor } from "@monaco-editor/react";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import type { AgentSessionFileDiff } from "@/features/session-dashboard/lib/session-watch";
+import { Button } from "@/shared/components/ui/button";
 import {
   ensureShikiMonaco,
   resolveMonacoLanguage,
   SHIKI_DARK_THEME,
   SHIKI_LIGHT_THEME,
-} from "@/lib/monaco-shiki";
-import type { AgentSessionFileDiff } from "@/lib/session-watch";
+} from "@/shared/lib/editor/monaco-shiki";
+
+import styles from "./FileDiffViewer.module.css";
 
 export function FileDiffViewer({
   diff,
@@ -77,7 +79,7 @@ export function FileDiffViewer({
           <span className="sr-only">Close diff viewer</span>
         </Button>
       </div>
-      <div className="bg-muted/10 min-h-0 flex-1">
+      <div className={`${styles.editorSurface} bg-muted/10 min-h-0 flex-1`}>
         {isLoading || !isMonacoReady ? (
           <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
             {isLoading

@@ -1,0 +1,7 @@
+.editorSurface :global(.monaco-editor),
+.editorSurface :global(.monaco-editor *),
+.editorSurface :global(.monaco-diff-editor),
+.editorSurface :global(.monaco-diff-editor *) {
+  -webkit-user-select: text;
+  user-select: text;
+}

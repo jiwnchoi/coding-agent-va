@@ -1,8 +1,8 @@
 import type { RefObject } from "react";
 
-import keyboardShortcutConfig from "@/config/keyboard-shortcuts.json";
-import type { KeyboardShortcut, KeyboardShortcutConfig } from "@/lib/keyboard-shortcuts";
+import type { KeyboardShortcut, KeyboardShortcutConfig } from "@/shared/hooks/useKeyboardShortcuts";
 
+import keyboardShortcutConfig from "./config/keyboard-shortcuts.json";
 import { selectSessionByTabNumber } from "./session-tabs";
 
 const APP_SHORTCUTS = keyboardShortcutConfig as KeyboardShortcutConfig[];
