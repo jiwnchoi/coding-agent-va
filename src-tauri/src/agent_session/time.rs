@@ -2,12 +2,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::json::json_str;
 
-pub(crate) fn payload_timestamp_ms(payload: &serde_json::Value) -> u64 {
-    json_str(payload, &["timestamp"])
-        .and_then(timestamp_string_to_ms)
-        .unwrap_or_default()
-}
-
 pub(crate) fn entry_timestamp_ms(entry: &serde_json::Value) -> u64 {
     json_str(entry, &["timestamp"])
         .and_then(timestamp_string_to_ms)

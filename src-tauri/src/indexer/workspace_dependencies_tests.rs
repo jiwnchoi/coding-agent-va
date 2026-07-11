@@ -63,6 +63,46 @@ fn explains_why_files_are_impacted() {
     fs::remove_dir_all(workspace_root).expect("cleanup workspace");
 }
 
+#[test]
+fn finds_rust_importers_for_crate_and_super_paths() {
+    let workspace_root = create_temp_workspace("rust-imports");
+    let crate_root = workspace_root.join("backend");
+    let activity_dir = crate_root.join("src/agent_session/activity");
+    fs::create_dir_all(&activity_dir).expect("create Rust source dirs");
+    fs::write(
+        crate_root.join("Cargo.toml"),
+        "[package]\nname='test'\nversion='0.1.0'\n",
+    )
+    .expect("write Cargo manifest");
+    fs::write(
+        crate_root.join("src/agent_session/json.rs"),
+        "pub fn json_str() {}\n",
+    )
+    .expect("write json module");
+    fs::write(activity_dir.join("shell.rs"), "pub fn collect() {}\n").expect("write shell module");
+    fs::write(
+        activity_dir.join("codex.rs"),
+        "use crate::agent_session::json::json_str;\nuse super::shell::collect;\n",
+    )
+    .expect("write importer");
+
+    let changed_files = [
+        crate_root.join("src/agent_session/json.rs"),
+        activity_dir.join("shell.rs"),
+    ];
+    let impacted_files =
+        find_impacted_files(&workspace_root, &changed_files).expect("index Rust dependencies");
+    let impacted_relations = find_impacted_file_relations(&workspace_root, &changed_files)
+        .expect("index Rust dependency relations");
+
+    assert_eq!(
+        impacted_files,
+        vec!["backend/src/agent_session/activity/codex.rs"]
+    );
+    assert_eq!(impacted_relations.len(), 2);
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
 fn create_temp_workspace(label: &str) -> PathBuf {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)

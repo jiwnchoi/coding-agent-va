@@ -117,7 +117,15 @@ fn resolve_internal_import(
     workspace_root: &Path,
     known_files: &HashSet<PathBuf>,
 ) -> Vec<PathBuf> {
-    if specifier.is_empty() || is_external_specifier(specifier) {
+    if specifier.is_empty() {
+        return Vec::new();
+    }
+
+    if language == SupportedLanguage::Rust {
+        return resolve_rust_import(importer, specifier, workspace_root, known_files);
+    }
+
+    if is_external_specifier(specifier) {
         return Vec::new();
     }
 
@@ -135,6 +143,66 @@ fn resolve_internal_import(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn resolve_rust_import(
+    importer: &Path,
+    specifier: &str,
+    workspace_root: &Path,
+    known_files: &HashSet<PathBuf>,
+) -> Vec<PathBuf> {
+    let importer_directory = importer.parent().unwrap_or(workspace_root);
+    let (base_directory, module_path) = if let Some(path) = specifier.strip_prefix("crate::") {
+        (rust_source_root(importer, workspace_root), path)
+    } else if let Some(path) = specifier.strip_prefix("self::") {
+        (importer_directory.to_path_buf(), path)
+    } else if specifier.starts_with("super::") {
+        let mut base = importer_directory.to_path_buf();
+        let mut path = specifier;
+        let mut is_first_parent = true;
+        while let Some(remainder) = path.strip_prefix("super::") {
+            if is_first_parent {
+                is_first_parent = false;
+            } else {
+                base.pop();
+            }
+            path = remainder;
+        }
+        (base, path)
+    } else if !specifier.contains("::") {
+        (importer_directory.to_path_buf(), specifier)
+    } else {
+        return Vec::new();
+    };
+
+    let components = module_path.split("::").collect::<Vec<_>>();
+    let mut resolved = BTreeSet::new();
+    for component_count in (1..=components.len()).rev() {
+        let base_path = components[..component_count]
+            .iter()
+            .fold(base_directory.clone(), |path, component| {
+                path.join(component)
+            });
+        for candidate in [base_path.with_extension("rs"), base_path.join("mod.rs")] {
+            let candidate = normalize_path(&candidate, workspace_root);
+            if known_files.contains(&candidate) {
+                resolved.insert(candidate);
+            }
+        }
+        if !resolved.is_empty() {
+            break;
+        }
+    }
+
+    resolved.into_iter().collect()
+}
+
+fn rust_source_root(importer: &Path, workspace_root: &Path) -> PathBuf {
+    importer
+        .ancestors()
+        .find(|ancestor| ancestor.join("Cargo.toml").is_file())
+        .map(|crate_root| crate_root.join("src"))
+        .unwrap_or_else(|| workspace_root.to_path_buf())
 }
 
 fn candidate_paths(base_path: &Path, language: SupportedLanguage) -> Vec<PathBuf> {

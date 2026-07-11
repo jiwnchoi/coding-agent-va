@@ -7,10 +7,10 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { FileCode2, FolderTree, SearchCode } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import styles from "@/features/session-dashboard/context-graph/ContextGraphView.module.css";
+import { fileIconForLanguage } from "@/features/session-dashboard/context-graph/fileIcon";
 import type {
   ContextGraphEdge,
   ContextGraphNode,
@@ -69,10 +69,16 @@ export function SessionContextGraphView({
     ContextGraphEdge
   > | null>(null);
   const nodes = contextGraph.nodes;
-  const edges = useMemo(
-    () => [...contextGraph.containsEdges, ...contextGraph.impactEdges],
-    [contextGraph]
-  );
+  const edges = useMemo(() => {
+    const nodeById = new Map(contextGraph.nodes.map((node) => [node.id, node]));
+    const folderEdges = contextGraph.containsEdges.filter(
+      (edge) =>
+        nodeById.get(edge.source)?.data.kind === "directory" &&
+        nodeById.get(edge.target)?.data.kind === "directory"
+    );
+
+    return [...folderEdges, ...contextGraph.impactEdges];
+  }, [contextGraph]);
 
   useEffect(() => {
     if (!reactFlowInstance || nodes.length === 0) {
@@ -184,19 +190,17 @@ export function SessionContextGraphView({
 }
 
 function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
-  const Icon =
-    data.kind === "repo" ? SearchCode : data.kind === "directory" ? FolderTree : FileCode2;
+  const isFile = data.kind === "file";
 
   return (
     <div
       className={cn(
         styles.node,
-        "text-card-foreground border-border h-11 w-[156px] rounded-md border px-2 py-1.5",
-        data.kind === "repo" && styles.repoNode,
+        "text-card-foreground border-border relative h-full w-full border",
         data.kind === "directory" && styles.directoryNode,
-        data.kind === "file" && "bg-card",
-        primaryActivityClass(data.activities),
-        data.isSelected && styles.selectedNode
+        isFile && "bg-card rounded-md px-2 py-1.5",
+        isFile && primaryActivityClass(data.activities),
+        isFile && data.isSelected && styles.selectedNode
       )}>
       {handlePositions.map(([side, position]) => (
         <Handle
@@ -216,13 +220,19 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
           position={position}
         />
       ))}
-      <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-3.5 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs leading-4 font-medium">{data.label}</p>
-          <p className="text-muted-foreground truncate text-[10px] leading-3">{data.displayPath}</p>
+      {isFile ? (
+        <div className="flex h-full items-center gap-2">
+          <img
+            alt=""
+            aria-hidden="true"
+            className="size-4 shrink-0"
+            src={fileIconForLanguage(data.language)}
+          />
+          <p className="min-w-0 flex-1 truncate text-xs leading-4 font-medium">{data.label}</p>
         </div>
-      </div>
+      ) : (
+        <p className={styles.directoryLabel}>{data.label}</p>
+      )}
     </div>
   );
 }

@@ -102,6 +102,8 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     })
     .map(toContainsEdge);
 
+  const collapsedHierarchy = collapseSingleDirectoryChains(nodes, containsEdges);
+
   const impactEdges = options.fileActivity.impactedRelations
     .map((relation): ContextGraphEdge | null => {
       const changedFile = normalizeWorkspacePath(relation.changedFile, workspacePath);
@@ -140,11 +142,11 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
       };
     })
     .filter((edge): edge is ContextGraphEdge => edge !== null);
-  const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeIds = new Set(collapsedHierarchy.nodes.map((node) => node.id));
 
   return {
-    nodes,
-    containsEdges: containsEdges.filter(
+    nodes: collapsedHierarchy.nodes,
+    containsEdges: collapsedHierarchy.edges.filter(
       (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)
     ),
     impactEdges: impactEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
@@ -181,9 +183,81 @@ function toContextGraphNode({
       isSelected,
       kind: node.kind as ContextGraphNodeData["kind"],
       label: node.label,
+      language: node.metadata?.language ?? "",
       path: node.path ?? "",
     },
   };
+}
+
+function collapseSingleDirectoryChains(
+  nodes: ContextGraphNode[],
+  edges: ContextGraphEdge[]
+): { nodes: ContextGraphNode[]; edges: ContextGraphEdge[] } {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const childrenByParentId = new Map<string, string[]>();
+  const parentIdByChildId = new Map<string, string>();
+
+  for (const edge of edges) {
+    childrenByParentId.set(edge.source, [
+      ...(childrenByParentId.get(edge.source) ?? []),
+      edge.target,
+    ]);
+    parentIdByChildId.set(edge.target, edge.source);
+  }
+
+  const removedIds = new Set<string>();
+
+  for (const node of nodes) {
+    if (node.data.kind !== "directory" || removedIds.has(node.id)) {
+      continue;
+    }
+
+    const labels = [node.data.label];
+    let tailId = node.id;
+    let children = childrenByParentId.get(tailId) ?? [];
+
+    while (children.length === 1) {
+      const child = nodeById.get(children[0]);
+
+      if (!child || child.data.kind !== "directory") {
+        break;
+      }
+
+      removedIds.add(child.id);
+      labels.push(child.data.label);
+      tailId = child.id;
+      children = childrenByParentId.get(tailId) ?? [];
+    }
+
+    if (tailId !== node.id) {
+      node.data = { ...node.data, label: labels.join("/") };
+      childrenByParentId.set(node.id, children);
+      for (const childId of children) {
+        parentIdByChildId.set(childId, node.id);
+      }
+    }
+  }
+
+  const collapsedNodes = nodes.filter((node) => !removedIds.has(node.id));
+  const collapsedNodeIds = new Set(collapsedNodes.map((node) => node.id));
+  const collapsedEdges: ContextGraphEdge[] = [];
+
+  for (const [childId, parentId] of parentIdByChildId) {
+    if (!collapsedNodeIds.has(parentId) || !collapsedNodeIds.has(childId)) {
+      continue;
+    }
+
+    collapsedEdges.push(
+      toContainsEdge({
+        id: `contains:${parentId}->${childId}`,
+        kind: "contains",
+        source: parentId,
+        target: childId,
+      })
+    );
+  }
+
+  return { nodes: collapsedNodes, edges: collapsedEdges };
 }
 
 function toContainsEdge(edge: ArchitectureEdge): ContextGraphEdge {

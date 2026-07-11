@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::shell::{collect_shell_read_files, insert_activity_path};
+use super::shell::{
+    collect_shell_deleted_files, collect_shell_edited_files, collect_shell_read_files,
+    insert_activity_path,
+};
 use crate::agent_session::json::json_str;
 
 #[derive(Deserialize)]
@@ -15,8 +18,25 @@ pub(crate) struct CodexRolloutEnvelope {
 
 #[derive(Deserialize)]
 struct CodexExecCommandArguments {
+    #[serde(alias = "command", deserialize_with = "deserialize_command")]
     cmd: String,
     workdir: Option<String>,
+}
+
+fn deserialize_command<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(command) => Ok(command),
+        serde_json::Value::Array(arguments) => arguments
+            .last()
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::custom("command array has no script")),
+        _ => Err(serde::de::Error::custom("command is not a string or array")),
+    }
 }
 
 pub(crate) fn collect_codex_read_files(
@@ -65,8 +85,10 @@ fn extract_exec_command_arguments(
     payload: &serde_json::Value,
 ) -> Option<CodexExecCommandArguments> {
     match (json_str(payload, &["type"]), json_str(payload, &["name"])) {
-        (Some("function_call"), Some("exec_command")) => json_str(payload, &["arguments"])
-            .and_then(|arguments| serde_json::from_str(arguments).ok()),
+        (Some("function_call"), Some("exec_command" | "shell" | "shell_command")) => {
+            json_str(payload, &["arguments"])
+                .and_then(|arguments| serde_json::from_str(arguments).ok())
+        }
         (Some("custom_tool_call"), Some("exec")) => {
             json_str(payload, &["input"]).and_then(custom_exec_command_arguments)
         }
@@ -118,39 +140,145 @@ fn json_object_at(input: &str) -> Option<&str> {
 
 pub(crate) fn collect_codex_written_files(
     payload: &serde_json::Value,
+    workspace_root: Option<&Path>,
     timestamp_ms: u64,
     edited_files: &mut HashMap<String, u64>,
     deleted_files: &mut HashMap<String, u64>,
 ) {
-    if json_str(payload, &["type"]) != Some("patch_apply_end") {
+    if json_str(payload, &["type"]) == Some("patch_apply_end") {
+        if let Some(changes) = payload.get("changes").and_then(|value| value.as_object()) {
+            for (path, change) in changes {
+                match json_str(change, &["type"]) {
+                    Some("delete") => {
+                        insert_activity_path(deleted_files, path, workspace_root, timestamp_ms)
+                    }
+                    Some("add" | "update" | "move") => {
+                        insert_activity_path(edited_files, path, workspace_root, timestamp_ms)
+                    }
+                    _ => {}
+                }
+            }
+        }
         return;
     }
 
-    let Some(changes) = payload.get("changes").and_then(|value| value.as_object()) else {
+    if matches!(
+        (json_str(payload, &["type"]), json_str(payload, &["name"])),
+        (Some("custom_tool_call"), Some("apply_patch"))
+    ) {
+        if let Some(patch) = json_str(payload, &["input"]) {
+            collect_apply_patch_files(
+                patch,
+                workspace_root,
+                timestamp_ms,
+                edited_files,
+                deleted_files,
+            );
+        }
+        return;
+    }
+
+    if matches!(
+        (json_str(payload, &["type"]), json_str(payload, &["name"])),
+        (Some("custom_tool_call"), Some("exec"))
+    ) {
+        if let Some(patch) = json_str(payload, &["input"]).and_then(custom_exec_apply_patch) {
+            collect_apply_patch_files(
+                &patch,
+                workspace_root,
+                timestamp_ms,
+                edited_files,
+                deleted_files,
+            );
+        }
+    }
+
+    let Some(exec_arguments) = extract_exec_command_arguments(payload) else {
         return;
     };
+    let command_root = exec_arguments
+        .workdir
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| workspace_root.map(Path::to_path_buf));
+    collect_shell_edited_files(
+        &exec_arguments.cmd,
+        command_root.as_deref(),
+        timestamp_ms,
+        edited_files,
+    );
+    collect_shell_deleted_files(
+        &exec_arguments.cmd,
+        command_root.as_deref(),
+        timestamp_ms,
+        deleted_files,
+    );
+}
 
-    for (path, change) in changes {
-        let Some(change_type) = json_str(change, &["type"]) else {
+fn custom_exec_apply_patch(input: &str) -> Option<String> {
+    let call = input.find("tools.apply_patch(")?;
+    let argument = input[call + "tools.apply_patch(".len()..]
+        .split_once(')')?
+        .0
+        .trim();
+    let encoded = if argument.starts_with('"') {
+        argument
+    } else {
+        let assignment = format!("const {argument} = ");
+        let start = input[..call].rfind(&assignment)? + assignment.len();
+        input[start..].trim_start()
+    };
+    let encoded = json_string_at(encoded)?;
+    serde_json::from_str(encoded).ok()
+}
+
+fn json_string_at(input: &str) -> Option<&str> {
+    if !input.starts_with('"') {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in input.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == '"' {
+            return input.get(..=index);
+        }
+    }
+    None
+}
+
+fn collect_apply_patch_files(
+    patch: &str,
+    workspace_root: Option<&Path>,
+    timestamp_ms: u64,
+    edited_files: &mut HashMap<String, u64>,
+    deleted_files: &mut HashMap<String, u64>,
+) {
+    for line in patch.lines() {
+        let (target, path) = if let Some(path) = line.strip_prefix("*** Delete File: ") {
+            (deleted_files as &mut HashMap<String, u64>, path)
+        } else if let Some(path) = line
+            .strip_prefix("*** Add File: ")
+            .or_else(|| line.strip_prefix("*** Update File: "))
+            .or_else(|| line.strip_prefix("*** Move to: "))
+        {
+            (edited_files as &mut HashMap<String, u64>, path)
+        } else {
             continue;
         };
-
-        match change_type {
-            "delete" => insert_activity_path(deleted_files, path, None, timestamp_ms),
-            "add" | "update" | "move" => {
-                insert_activity_path(edited_files, path, None, timestamp_ms)
-            }
-            _ => {}
-        }
+        insert_activity_path(target, path, workspace_root, timestamp_ms);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::collect_codex_read_files;
+    use super::{collect_codex_read_files, collect_codex_written_files};
     use crate::agent_session::paths::normalize_absolute_activity_path;
     use std::collections::HashMap;
     use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -179,5 +307,93 @@ mod tests {
 
         assert!(read_files.contains_key(&normalize_absolute_activity_path(&file_path)));
         fs::remove_dir_all(workspace).expect("cleanup workspace");
+    }
+
+    #[test]
+    fn collects_writes_from_current_apply_patch_calls() {
+        let workspace = test_workspace();
+        fs::create_dir_all(workspace.join("src")).expect("create source directory");
+        let payload = serde_json::json!({
+            "type": "custom_tool_call",
+            "name": "apply_patch",
+            "input": "*** Begin Patch\n*** Update File: src/lib.rs\n*** Move to: src/main.rs\n*** Delete File: old.rs\n*** End Patch",
+        });
+        let mut edited_files = HashMap::new();
+        let mut deleted_files = HashMap::new();
+
+        collect_codex_written_files(
+            &payload,
+            Some(&workspace),
+            7,
+            &mut edited_files,
+            &mut deleted_files,
+        );
+
+        assert!(edited_files.contains_key(&normalize_absolute_activity_path(
+            &workspace.join("src/lib.rs")
+        )));
+        assert!(edited_files.contains_key(&normalize_absolute_activity_path(
+            &workspace.join("src/main.rs")
+        )));
+        assert!(deleted_files
+            .contains_key(&normalize_absolute_activity_path(&workspace.join("old.rs"))));
+        fs::remove_dir_all(workspace).expect("cleanup workspace");
+    }
+
+    #[test]
+    fn collects_reads_from_legacy_shell_array_calls() {
+        let workspace = test_workspace();
+        let file_path = workspace.join("target.txt");
+        fs::write(&file_path, "content").expect("write target");
+        let payload = serde_json::json!({
+            "type": "function_call",
+            "name": "shell",
+            "arguments": serde_json::json!({
+                "command": ["bash", "-lc", "sed -n '1p' target.txt"],
+                "workdir": workspace,
+            }).to_string(),
+        });
+        let mut read_files = HashMap::new();
+
+        collect_codex_read_files(&payload, Some(&workspace), 1, &mut read_files);
+
+        assert!(read_files.contains_key(&normalize_absolute_activity_path(&file_path)));
+        fs::remove_dir_all(workspace).expect("cleanup workspace");
+    }
+
+    #[test]
+    fn collects_writes_from_current_custom_exec_wrapper() {
+        let workspace = test_workspace();
+        let payload = serde_json::json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "const patch = \"*** Begin Patch\\n*** Add File: src/new.rs\\n*** End Patch\"; text(await tools.apply_patch(patch));",
+        });
+        let mut edited_files = HashMap::new();
+        let mut deleted_files = HashMap::new();
+
+        collect_codex_written_files(
+            &payload,
+            Some(&workspace),
+            9,
+            &mut edited_files,
+            &mut deleted_files,
+        );
+
+        assert_eq!(edited_files.len(), 1);
+        assert_eq!(deleted_files.len(), 0);
+        fs::remove_dir_all(workspace).expect("cleanup workspace");
+    }
+
+    fn test_workspace() -> PathBuf {
+        let workspace = std::env::temp_dir().join(format!(
+            "coding-agent-va-codex-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&workspace).expect("create workspace");
+        workspace
     }
 }

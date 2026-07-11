@@ -8,6 +8,7 @@ import {
   rotateSession,
   selectMostRecentlyActiveSession,
   SessionContextGraphView,
+  SessionFileViewer,
   SessionPickerDropdown,
   SessionTabBar,
   useAgentSessionWatchRefresh,
@@ -15,11 +16,14 @@ import {
   useSessionState,
 } from "@/features/session-dashboard";
 import { useSessionFileActivity } from "@/features/session-dashboard/hooks/useSessionFileActivity";
+import { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import {
   type AgentRuntimeSource,
   type AgentSessionList,
   type AgentSessionSummary,
+  type SelectedActivityFile,
 } from "@/features/session-dashboard/lib/session-watch";
+import { useEditorTheme } from "@/shared/hooks/useEditorTheme";
 import type { KeyboardShortcut } from "@/shared/hooks/useKeyboardShortcuts";
 import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
 import { cn } from "@/shared/lib/utils";
@@ -44,6 +48,9 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
+  const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
+    null
+  );
   const watchRegistrations = useAgentSessionWatches(runtimeSources);
   const openSessions = openSessionIds
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
@@ -53,12 +60,22 @@ function App() {
     selectedSession,
     fileActivityRefreshVersion
   );
+  const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
+    useSessionFileDiff(selectedSession, selectedActivityFile);
+  const editorTheme = useEditorTheme();
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     setSearchQuery("");
+    setSelectedActivityFile(null);
+    clearSelectedFileDiffState();
+  }
+
+  function handleCloseFileViewer() {
+    setSelectedActivityFile(null);
+    clearSelectedFileDiffState();
   }
 
   const shortcutActions: Record<string, KeyboardShortcut["handler"]> = {
@@ -173,7 +190,7 @@ function App() {
           </div>
         </div>
       </header>
-      <main className={cn(styles.main, "relative h-full min-h-0")}>
+      <main className={cn(styles.main, "relative flex h-full min-h-0")}>
         <div
           className={cn(
             styles.contextGraphTitle,
@@ -181,12 +198,22 @@ function App() {
           )}>
           {selectedSessionLabel}
         </div>
-        <SessionContextGraphView
-          fileActivity={fileActivity}
-          isFileActivityLoading={isFileActivityLoading || isLoading}
-          selectedActivityFile={null}
-          selectedSession={selectedSession}
-          onSelectFile={() => {}}
+        <div className="min-w-0 flex-1">
+          <SessionContextGraphView
+            fileActivity={fileActivity}
+            isFileActivityLoading={isFileActivityLoading || isLoading}
+            selectedActivityFile={selectedActivityFile}
+            selectedSession={selectedSession}
+            onSelectFile={setSelectedActivityFile}
+          />
+        </div>
+        <SessionFileViewer
+          errorMessage={fileDiffErrorMessage}
+          isLoading={Boolean(isFileDiffLoading)}
+          onClose={handleCloseFileViewer}
+          selectedActivityFile={selectedActivityFile}
+          selectedFileDiff={selectedFileDiff}
+          theme={editorTheme}
         />
       </main>
     </div>
