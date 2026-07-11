@@ -29,6 +29,7 @@ const nodeTypes = {
   contextGraphNode: ContextGraphNodeComponent,
 };
 const edgeTypes = {
+  contextGraphContainsEdge: ContextGraphContainsEdgeComponent,
   contextGraphImpactEdge: ContextGraphImpactEdgeComponent,
 };
 const FIT_VIEW_OPTIONS = {
@@ -224,6 +225,24 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
       </div>
     </div>
   );
+}
+
+function ContextGraphContainsEdgeComponent({
+  markerEnd,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+}: EdgeProps<ContextGraphEdge>) {
+  const bendX = (sourceX + targetX) / 2;
+  const edgePath = [
+    `M ${sourceX},${sourceY}`,
+    `L ${bendX},${sourceY}`,
+    `L ${bendX},${targetY}`,
+    `L ${targetX},${targetY}`,
+  ].join(" ");
+
+  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
 }
 
 function ContextGraphImpactEdgeComponent({

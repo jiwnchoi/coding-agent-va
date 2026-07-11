@@ -196,6 +196,6 @@ function toContainsEdge(edge: ArchitectureEdge): ContextGraphEdge {
       kind: "contains",
       isHighlighted: false,
     },
-    type: "straight",
+    type: "contextGraphContainsEdge",
   };
 }

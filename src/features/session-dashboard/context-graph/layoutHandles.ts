@@ -9,26 +9,11 @@ import {
 } from "./layoutConstants";
 import type { ContextGraphModel, ContextGraphNode } from "./types";
 
-export function assignClosestEdgeHandles(
-  edge: ContextGraphModel["containsEdges"][number],
-  positionById: Map<string, { x: number; y: number }>
-) {
-  const sourcePosition = positionById.get(edge.source);
-  const targetPosition = positionById.get(edge.target);
-
-  if (!sourcePosition || !targetPosition) {
-    return edge;
-  }
-
-  const sourceCenter = toNodeCenter(sourcePosition);
-  const targetCenter = toNodeCenter(targetPosition);
-  const sourceSide = closestSourceSide(sourceCenter, targetCenter);
-  const targetSide = oppositeSide(sourceSide);
-
+export function assignClosestEdgeHandles(edge: ContextGraphModel["containsEdges"][number]) {
   return {
     ...edge,
-    sourceHandle: handleId(HANDLE_PREFIXES.source, sourceSide),
-    targetHandle: handleId(HANDLE_PREFIXES.target, targetSide),
+    sourceHandle: handleId(HANDLE_PREFIXES.source, "right"),
+    targetHandle: handleId(HANDLE_PREFIXES.target, "left"),
   };
 }
 
@@ -87,13 +72,6 @@ export function assignImpactEdgeHandles(
   };
 }
 
-export function toNodeCenter(position: { x: number; y: number }) {
-  return {
-    x: position.x + NODE_WIDTH / 2,
-    y: position.y + NODE_HEIGHT / 2,
-  };
-}
-
 function sidePoint(position: { x: number; y: number }, side: EdgeSide) {
   switch (side) {
     case "top":
@@ -105,6 +83,13 @@ function sidePoint(position: { x: number; y: number }, side: EdgeSide) {
     case "left":
       return { x: position.x, y: position.y + NODE_HEIGHT / 2 };
   }
+}
+
+export function toNodeCenter(position: { x: number; y: number }) {
+  return {
+    x: position.x + NODE_WIDTH / 2,
+    y: position.y + NODE_HEIGHT / 2,
+  };
 }
 
 function countLineNodeCollisions(
@@ -219,33 +204,6 @@ function sideDirectionPenalty(
   }
 
   return penalty;
-}
-
-function closestSourceSide(
-  sourceCenter: { x: number; y: number },
-  targetCenter: { x: number; y: number }
-): EdgeSide {
-  const deltaX = targetCenter.x - sourceCenter.x;
-  const deltaY = targetCenter.y - sourceCenter.y;
-
-  if (Math.abs(deltaX) >= Math.abs(deltaY)) {
-    return deltaX >= 0 ? "right" : "left";
-  }
-
-  return deltaY >= 0 ? "bottom" : "top";
-}
-
-function oppositeSide(side: EdgeSide): EdgeSide {
-  switch (side) {
-    case "top":
-      return "bottom";
-    case "right":
-      return "left";
-    case "bottom":
-      return "top";
-    case "left":
-      return "right";
-  }
 }
 
 function handleId(prefix: (typeof HANDLE_PREFIXES)[keyof typeof HANDLE_PREFIXES], side: EdgeSide) {

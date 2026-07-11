@@ -43,7 +43,7 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
   return {
     ...model,
     nodes,
-    containsEdges: model.containsEdges.map((edge) => assignClosestEdgeHandles(edge, positionById)),
+    containsEdges: model.containsEdges.map(assignClosestEdgeHandles),
     impactEdges: distributeImpactEdgeTargets(
       model.impactEdges.map((edge) => assignImpactEdgeHandles(edge, positionById, nodes)),
       positionById
