@@ -3,11 +3,7 @@ import type { ActivitySectionKey } from "@/features/session-dashboard/lib/sessio
 import { buildActivityByPath, buildChildActivityCounts } from "./contextGraphActivity";
 import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
 import styles from "./ContextGraphView.module.css";
-import {
-  collectVisibleNodeIds,
-  expandHiddenRootChildren,
-  isVisibleGraphNode,
-} from "./contextGraphVisibility";
+import { collectVisibleNodeIds, isVisibleGraphNode } from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
   ArchitectureNode,
@@ -67,7 +63,6 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     fileNodeIdByPathKey,
     includeEntireWorkspace: options.includeEntireWorkspace,
   });
-  expandHiddenRootChildren(architectureGraph, visibleNodeIds);
 
   const directoriesWithVisibleFiles = new Set(
     architectureGraph.edges

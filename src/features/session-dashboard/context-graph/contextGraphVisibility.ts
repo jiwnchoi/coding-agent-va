@@ -54,26 +54,6 @@ export function collectVisibleNodeIds({
   return visibleNodeIds;
 }
 
-export function expandHiddenRootChildren(
-  architectureGraph: ArchitectureGraph,
-  visibleNodeIds: Set<string>
-) {
-  const nodeById = new Map(architectureGraph.nodes.map((node) => [node.id, node]));
-
-  for (const edge of architectureGraph.edges) {
-    if (edge.kind !== "contains" || !visibleNodeIds.has(edge.source)) {
-      continue;
-    }
-
-    const source = nodeById.get(edge.source);
-    const target = nodeById.get(edge.target);
-
-    if (source?.kind === "repo" && target && isVisibleGraphNode(target)) {
-      visibleNodeIds.add(target.id);
-    }
-  }
-}
-
 export function isVisibleGraphNode(node: ArchitectureNode) {
   return isRenderableNode(node);
 }
