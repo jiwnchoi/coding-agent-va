@@ -32,6 +32,10 @@
   pointer-events: none;
 }
 
+.filelessDirectoryNode {
+  border-color: transparent;
+}
+
 .directoryLabel {
   background: var(--background);
   color: var(--muted-foreground);
@@ -46,6 +50,16 @@
   text-overflow: ellipsis;
   top: -0.5625rem;
   white-space: nowrap;
+}
+
+.filelessDirectoryLabel {
+  align-items: center;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  max-width: none;
+  padding: 0 0.625rem;
+  top: 0;
 }
 
 .editedNode {

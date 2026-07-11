@@ -69,6 +69,15 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   });
   expandHiddenRootChildren(architectureGraph, visibleNodeIds);
 
+  const directoriesWithVisibleFiles = new Set(
+    architectureGraph.edges
+      .filter((edge) => edge.kind === "contains")
+      .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+      .filter((edge) => nodeById.get(edge.source)?.kind === "directory")
+      .filter((edge) => nodeById.get(edge.target)?.kind === "file")
+      .map((edge) => edge.source)
+  );
+
   const childActivityCountByNodeId = buildChildActivityCounts(
     architectureGraph,
     visibleNodeIds,
@@ -84,6 +93,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
       toContextGraphNode({
         activities: activityByPath.get(displayPathForNode(node, workspacePath)) ?? [],
         childActivityCount: childActivityCountByNodeId.get(node.id) ?? 0,
+        hasDirectFiles: directoriesWithVisibleFiles.has(node.id),
         isPinned: pinnedFilePaths.includes(displayPathForNode(node, workspacePath)),
         isSelected: selectedFilePath === displayPathForNode(node, workspacePath),
         node,
@@ -202,6 +212,7 @@ function pruneEmptyDirectories(
 function toContextGraphNode({
   activities,
   childActivityCount,
+  hasDirectFiles,
   isPinned,
   isSelected,
   node,
@@ -209,6 +220,7 @@ function toContextGraphNode({
 }: {
   activities: ActivitySectionKey[];
   childActivityCount: number;
+  hasDirectFiles: boolean;
   isPinned: boolean;
   isSelected: boolean;
   node: ArchitectureNode;
@@ -225,6 +237,7 @@ function toContextGraphNode({
       displayPath: displayPathForNode(node, workspacePath),
       isPinned,
       isSelected,
+      hasDirectFiles,
       kind: node.kind as ContextGraphNodeData["kind"],
       label: node.label,
       language: node.metadata?.language ?? "",
