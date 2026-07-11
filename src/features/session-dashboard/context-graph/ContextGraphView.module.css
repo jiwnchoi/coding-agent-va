@@ -1,0 +1,100 @@
+.shell {
+  --context-graph-border-width: 2px;
+}
+
+.shell :global(.react-flow__pane) {
+  cursor: grab;
+}
+
+.shell :global(.react-flow__pane:active) {
+  cursor: grabbing;
+}
+
+.node {
+  background: color-mix(in oklch, var(--card) 94%, transparent);
+  border-width: var(--context-graph-border-width);
+  box-shadow: 0 0.75rem 2rem color-mix(in oklch, var(--foreground) 8%, transparent);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.node:hover {
+  border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
+  box-shadow: 0 1rem 2.5rem color-mix(in oklch, var(--foreground) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.repoNode {
+  background: color-mix(in oklch, var(--foreground) 7%, var(--card));
+}
+
+.directoryNode {
+  background: color-mix(in oklch, var(--muted) 38%, var(--card));
+}
+
+.editedNode {
+  border-color: #2ca02c;
+}
+
+.deletedNode {
+  border-color: #d62728;
+}
+
+.impactedNode {
+  border-color: #ff7f0e;
+}
+
+.selectedNode {
+  border-color: color-mix(in oklch, var(--foreground) 58%, var(--border));
+  box-shadow:
+    0 0 0 3px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 1rem 2.5rem color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+
+.handle {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  background: transparent;
+  border: 0;
+  opacity: 0;
+}
+
+.containsEdge :global(.react-flow__edge-path) {
+  stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
+  stroke-dasharray: 7 5;
+  stroke-width: 1.5;
+  opacity: 0.78;
+}
+
+.impactEdge,
+.highlightedImpactEdge {
+  z-index: 20;
+}
+
+.impactEdge :global(.react-flow__edge-path),
+.highlightedImpactEdge :global(.react-flow__edge-path) {
+  stroke: #ff7f0e;
+  stroke-linecap: round;
+  stroke-width: var(--context-graph-border-width);
+}
+
+.impactEdge :global(.react-flow__edge-path) {
+  opacity: 0.78;
+}
+
+.highlightedImpactEdge :global(.react-flow__edge-path) {
+  opacity: 1;
+}
+
+.status {
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+}
+
+.error {
+  background: color-mix(in oklch, var(--destructive) 14%, var(--card));
+  border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { AgentSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
 
 import { closeSessionTab, reconcileTabState, updateSessionHistory } from "./session-tab-utils";
 

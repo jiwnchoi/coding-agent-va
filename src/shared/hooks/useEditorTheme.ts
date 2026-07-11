@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { SHIKI_DARK_THEME, SHIKI_LIGHT_THEME } from "@/lib/monaco-shiki";
+import { SHIKI_DARK_THEME, SHIKI_LIGHT_THEME } from "@/shared/lib/editor/monaco-shiki";
 
 function subscribe(callback: () => void) {
   const darkModeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

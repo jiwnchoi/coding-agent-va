@@ -1,15 +1,18 @@
 import {
+  BaseEdge,
+  type EdgeProps,
   Handle,
   Position,
   ReactFlow,
   type NodeProps,
-  useEdgesState,
-  useNodesState,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { FileCode2, FolderTree, SearchCode } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import styles from "@/features/session-dashboard/context-graph/ContextGraphView.module.css";
 import type {
+  ContextGraphEdge,
   ContextGraphNode,
   ContextGraphNodeData,
 } from "@/features/session-dashboard/context-graph/types";
@@ -19,12 +22,26 @@ import {
   type AgentSessionFileActivity,
   type AgentSessionSummary,
   type SelectedActivityFile,
-} from "@/lib/session-watch";
-import { cn } from "@/lib/utils";
+} from "@/features/session-dashboard/lib/session-watch";
+import { cn } from "@/shared/lib/utils";
 
 const nodeTypes = {
   contextGraphNode: ContextGraphNodeComponent,
 };
+const edgeTypes = {
+  contextGraphContainsEdge: ContextGraphContainsEdgeComponent,
+  contextGraphImpactEdge: ContextGraphImpactEdgeComponent,
+};
+const FIT_VIEW_OPTIONS = {
+  padding: 0.08,
+} as const;
+const EMPTY_PINNED_FILE_PATHS: string[] = [];
+const handlePositions = [
+  ["top", Position.Top],
+  ["right", Position.Right],
+  ["bottom", Position.Bottom],
+  ["left", Position.Left],
+] as const;
 
 export function SessionContextGraphView({
   fileActivity,
@@ -43,19 +60,55 @@ export function SessionContextGraphView({
   const { contextGraph, errorMessage, isLoading } = useSessionContextGraph({
     fileActivity,
     includeEntireWorkspace: false,
-    pinnedFilePaths: [],
+    pinnedFilePaths: EMPTY_PINNED_FILE_PATHS,
     selectedFilePath,
     selectedSession,
   });
-  const [nodes, setNodes, onNodesChange] = useNodesState<ContextGraphNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
-    contextGraph ? [...contextGraph.containsEdges, ...contextGraph.impactEdges] : []
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<
+    ContextGraphNode,
+    ContextGraphEdge
+  > | null>(null);
+  const nodes = contextGraph.nodes;
+  const edges = useMemo(
+    () => [...contextGraph.containsEdges, ...contextGraph.impactEdges],
+    [contextGraph]
   );
 
   useEffect(() => {
-    setNodes(contextGraph?.nodes ?? []);
-    setEdges(contextGraph ? [...contextGraph.containsEdges, ...contextGraph.impactEdges] : []);
-  }, [contextGraph, setEdges, setNodes]);
+    if (!reactFlowInstance || nodes.length === 0) {
+      return;
+    }
+
+    const currentReactFlowInstance = reactFlowInstance;
+    let animationFrameId: number | null = null;
+
+    function fitGraph() {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      animationFrameId = requestAnimationFrame(() => {
+        void currentReactFlowInstance.fitView(FIT_VIEW_OPTIONS);
+        animationFrameId = null;
+      });
+    }
+
+    function handleVisibilityChange() {
+      if (!document.hidden) {
+        fitGraph();
+      }
+    }
+
+    fitGraph();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [nodes, reactFlowInstance]);
 
   function handleNodeClick(node: ContextGraphNode) {
     if (node.data.kind !== "file") {
@@ -69,23 +122,29 @@ export function SessionContextGraphView({
   const isGraphLoading = isFileActivityLoading || isLoading;
 
   return (
-    <section>
-      <div className="context-graph-shell">
+    <section className="h-full min-h-0 w-full">
+      <div
+        className={cn(
+          styles.shell,
+          "relative h-full min-h-0 w-full overflow-hidden bg-transparent"
+        )}>
         {selectedSession?.cwd ? (
           <ReactFlow
+            className="h-full w-full"
             nodes={nodes}
             edges={edges}
+            edgeTypes={edgeTypes}
             nodeTypes={nodeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
-            elementsSelectable
+            elementsSelectable={false}
             fitView
-            fitViewOptions={{ padding: 0.22 }}
+            fitViewOptions={FIT_VIEW_OPTIONS}
             minZoom={0.2}
             maxZoom={1.8}
+            zoomOnDoubleClick={false}
             proOptions={{ hideAttribution: true }}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onInit={setReactFlowInstance}
             onNodeClick={(_event, node) => handleNodeClick(node as ContextGraphNode)}
           />
         ) : (
@@ -96,9 +155,23 @@ export function SessionContextGraphView({
         )}
 
         {isGraphLoading ? (
-          <div className="context-graph-status">Indexing and laying out...</div>
+          <div
+            className={cn(
+              styles.status,
+              "border-border text-muted-foreground absolute top-17 left-4 z-[5] rounded-full border px-3 py-[0.45rem] text-xs"
+            )}>
+            Indexing and laying out...
+          </div>
         ) : null}
-        {errorMessage ? <div className="context-graph-error">{errorMessage}</div> : null}
+        {errorMessage ? (
+          <div
+            className={cn(
+              styles.error,
+              "text-destructive absolute top-17 left-4 z-[5] rounded-full border px-3 py-[0.45rem] text-xs"
+            )}>
+            {errorMessage}
+          </div>
+        ) : null}
         {selectedSession?.cwd && nodes.length === 0 && !isGraphLoading ? (
           <GraphEmptyState
             title="No graph nodes"
@@ -117,29 +190,115 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
   return (
     <div
       className={cn(
-        "context-graph-node",
-        data.kind === "repo" && "context-graph-node-repo",
-        data.kind === "directory" && "context-graph-node-directory",
-        data.kind === "file" && "context-graph-node-file",
+        styles.node,
+        "text-card-foreground border-border h-11 w-[156px] rounded-md border px-2 py-1.5",
+        data.kind === "repo" && styles.repoNode,
+        data.kind === "directory" && styles.directoryNode,
+        data.kind === "file" && "bg-card",
         primaryActivityClass(data.activities),
-        data.isSelected && "context-graph-node-selected"
+        data.isSelected && styles.selectedNode
       )}>
-      <Handle className="context-graph-handle" type="target" position={Position.Left} />
-      <Handle className="context-graph-handle" type="source" position={Position.Right} />
+      {handlePositions.map(([side, position]) => (
+        <Handle
+          key={`target-${side}`}
+          id={`target-${side}`}
+          className={cn(styles.handle, "pointer-events-none border-0 bg-transparent opacity-0")}
+          type="target"
+          position={position}
+        />
+      ))}
+      {handlePositions.map(([side, position]) => (
+        <Handle
+          key={`source-${side}`}
+          id={`source-${side}`}
+          className={cn(styles.handle, "pointer-events-none border-0 bg-transparent opacity-0")}
+          type="source"
+          position={position}
+        />
+      ))}
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-4 shrink-0" />
+        <Icon className="mt-0.5 size-3.5 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{data.label}</p>
-          <p className="text-muted-foreground truncate text-[11px]">{data.displayPath}</p>
+          <p className="truncate text-xs leading-4 font-medium">{data.label}</p>
+          <p className="text-muted-foreground truncate text-[10px] leading-3">{data.displayPath}</p>
         </div>
       </div>
     </div>
   );
 }
 
+function ContextGraphContainsEdgeComponent({
+  markerEnd,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+}: EdgeProps<ContextGraphEdge>) {
+  const bendX = (sourceX + targetX) / 2;
+  const edgePath = [
+    `M ${sourceX},${sourceY}`,
+    `L ${bendX},${sourceY}`,
+    `L ${bendX},${targetY}`,
+    `L ${targetX},${targetY}`,
+  ].join(" ");
+
+  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
+}
+
+function ContextGraphImpactEdgeComponent({
+  data,
+  markerEnd,
+  sourcePosition,
+  sourceX,
+  sourceY,
+  targetPosition,
+  targetX,
+  targetY,
+}: EdgeProps<ContextGraphEdge>) {
+  const sourcePoint = {
+    x: sourceX + (data?.sourceOffset?.x ?? 0),
+    y: sourceY + (data?.sourceOffset?.y ?? 0),
+  };
+  const targetPoint = {
+    x: targetX + (data?.targetOffset?.x ?? 0),
+    y: targetY + (data?.targetOffset?.y ?? 0),
+  };
+  const controlDistance = Math.max(
+    36,
+    Math.min(120, Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y) * 0.34)
+  );
+  const sourceControl = controlPointForPosition(sourcePoint, sourcePosition, controlDistance);
+  const targetControl = controlPointForPosition(targetPoint, targetPosition, controlDistance);
+  const edgePath = [
+    `M ${sourcePoint.x},${sourcePoint.y}`,
+    `C ${sourceControl.x},${sourceControl.y}`,
+    `${targetControl.x},${targetControl.y}`,
+    `${targetPoint.x},${targetPoint.y}`,
+  ].join(" ");
+
+  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
+}
+
+function controlPointForPosition(
+  point: { x: number; y: number },
+  position: Position,
+  distance: number
+) {
+  switch (position) {
+    case Position.Top:
+      return { x: point.x, y: point.y - distance };
+    case Position.Right:
+      return { x: point.x + distance, y: point.y };
+    case Position.Bottom:
+      return { x: point.x, y: point.y + distance };
+    case Position.Left:
+      return { x: point.x - distance, y: point.y };
+  }
+}
+
 function GraphEmptyState({ title, description }: { title: string; description: string }) {
   return (
-    <div className="context-graph-empty">
+    <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center p-8 text-center">
       <p className="text-sm font-medium">{title}</p>
       <p className="text-muted-foreground mt-1 max-w-md text-sm">{description}</p>
     </div>
@@ -159,11 +318,11 @@ function primaryActivityClass(activities: ContextGraphNodeData["activities"]) {
 
   switch (resolvePrimaryActivity(activities)) {
     case "edited":
-      return "context-graph-node-activity-edited";
+      return styles.editedNode;
     case "deleted":
-      return "context-graph-node-activity-deleted";
+      return styles.deletedNode;
     case "impacted":
-      return "context-graph-node-activity-impacted";
+      return styles.impactedNode;
     case "read":
       return "";
   }

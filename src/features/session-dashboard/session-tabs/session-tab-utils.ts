@@ -1,5 +1,5 @@
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { AgentSessionSummary } from "@/lib/session-watch";
+import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
 
 export function getActiveSessionIds(sessions: AgentSessionSummary[], nowMs: number) {
   return sessions

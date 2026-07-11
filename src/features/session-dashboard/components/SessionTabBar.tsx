@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
-import type { AgentSessionSummary } from "@/lib/session-watch";
-import { cn } from "@/lib/utils";
+import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
+import { cn } from "@/shared/lib/utils";
 
 export function SessionTabBar({
   nowMs,

@@ -1,16 +1,16 @@
 import type { Node, Edge } from "@xyflow/react";
 
 import type {
+  ActivitySectionKey,
+  AgentSessionFileActivity,
+  AgentSessionImpactedFileRelation,
+} from "@/features/session-dashboard/lib/session-watch";
+import type {
   ArchitectureEdge,
   ArchitectureGraph,
   ArchitectureNode,
   NodeKind,
-} from "@/lib/generated/bindings";
-import type {
-  ActivitySectionKey,
-  AgentSessionFileActivity,
-  AgentSessionImpactedFileRelation,
-} from "@/lib/session-watch";
+} from "@/shared/lib/generated/bindings";
 
 export type { ArchitectureEdge, ArchitectureGraph, ArchitectureNode };
 export type ArchitectureNodeKind = NodeKind;
@@ -33,6 +33,14 @@ export type ContextGraphEdgeData = {
   kind: ContextGraphEdgeKind;
   importSpecifier?: string;
   isHighlighted: boolean;
+  sourceOffset?: {
+    x: number;
+    y: number;
+  };
+  targetOffset?: {
+    x: number;
+    y: number;
+  };
 };
 
 export type ContextGraphNode = Node<ContextGraphNodeData, "contextGraphNode">;

@@ -1,0 +1,23 @@
+.appShell {
+  --window-titlebar-height: 2.5rem;
+}
+
+.main {
+  padding-top: var(--window-titlebar-height);
+}
+
+.windowTitlebar {
+  app-region: drag;
+  height: var(--window-titlebar-height);
+}
+
+.windowTitlebar [data-window-control-exclusion] {
+  app-region: no-drag;
+}
+
+.contextGraphTitle {
+  background: color-mix(in oklch, var(--card) 94%, transparent);
+  box-shadow: 0 0.75rem 2rem color-mix(in oklch, var(--foreground) 10%, transparent);
+  max-width: min(28rem, calc(100vw - 2rem));
+  top: calc(var(--window-titlebar-height) + 1rem);
+}

@@ -1,0 +1,67 @@
+.diffPanel {
+  animation: diff-panel-fade-in 180ms ease forwards;
+}
+
+.diffPanel > section {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+.diffPanel:global(.react-resizable) {
+  max-width: 100%;
+  position: relative;
+}
+
+.diffPanel :global(.react-resizable-handle) {
+  position: absolute;
+  z-index: 10;
+}
+
+.diffPanel :global(.react-resizable-handle-w) {
+  bottom: 0;
+  cursor: col-resize;
+  left: -0.75rem;
+  top: 0;
+  width: 1.5rem;
+}
+
+.diffPanel :global(.react-resizable-handle-w)::before {
+  background: var(--border);
+  border-radius: 999px;
+  content: "";
+  height: 3.5rem;
+  left: 50%;
+  opacity: 0.7;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition:
+    background 160ms ease,
+    opacity 160ms ease;
+  width: 0.1875rem;
+}
+
+.diffPanel :global(.react-resizable-handle-w):hover::before {
+  background: var(--ring);
+  opacity: 1;
+}
+
+.modal {
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.modalPanel > section {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@keyframes diff-panel-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

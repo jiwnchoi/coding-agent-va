@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { AgentSessionFileActivity, AgentSessionSummary } from "@/lib/session-watch";
+import type {
+  AgentSessionFileActivity,
+  AgentSessionSummary,
+} from "@/features/session-dashboard/lib/session-watch";
 
 import { buildContextGraph } from "./buildContextGraph";
 import { layoutContextGraphWithHierarchy } from "./layoutContextGraphWithHierarchy";
-import type { ArchitectureGraph, ContextGraphModel } from "./types";
+import type { ArchitectureGraph } from "./types";
 
 export function useSessionContextGraph({
   fileActivity,
@@ -20,42 +23,47 @@ export function useSessionContextGraph({
   selectedFilePath: string;
   selectedSession: AgentSessionSummary | null;
 }) {
-  const [architectureGraph, setArchitectureGraph] = useState<ArchitectureGraph | null>(null);
-  const [contextGraph, setContextGraph] = useState<ContextGraphModel | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isIndexing, setIsIndexing] = useState(false);
-  const [isLayouting, setIsLayouting] = useState(false);
+  const workspacePath = selectedSession?.cwd ?? null;
+  const [indexedGraphsByWorkspacePath, setIndexedGraphsByWorkspacePath] = useState(
+    () => new Map<string, ArchitectureGraph>()
+  );
+  const [indexError, setIndexError] = useState<{
+    message: string;
+    workspacePath: string;
+  } | null>(null);
+  const architectureGraph = workspacePath
+    ? (indexedGraphsByWorkspacePath.get(workspacePath) ?? null)
+    : null;
 
   useEffect(() => {
-    if (!selectedSession?.cwd) {
-      setArchitectureGraph(null);
-      setErrorMessage("");
+    if (!workspacePath || architectureGraph) {
       return;
     }
 
-    const currentSession = selectedSession;
+    const currentWorkspacePath = workspacePath;
     let disposed = false;
 
     async function indexWorkspace() {
-      setIsIndexing(true);
-      setErrorMessage("");
+      setIndexError(null);
 
       try {
         const graph = await invoke<ArchitectureGraph>("index_workspace_graph", {
-          workspacePath: currentSession.cwd,
+          workspacePath: currentWorkspacePath,
         });
 
         if (!disposed) {
-          setArchitectureGraph(graph);
+          setIndexedGraphsByWorkspacePath((graphsByWorkspacePath) => {
+            const nextGraphsByWorkspacePath = new Map(graphsByWorkspacePath);
+            nextGraphsByWorkspacePath.set(currentWorkspacePath, graph);
+            return nextGraphsByWorkspacePath;
+          });
         }
       } catch (error) {
         if (!disposed) {
-          setArchitectureGraph(null);
-          setErrorMessage(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (!disposed) {
-          setIsIndexing(false);
+          setIndexError({
+            message: error instanceof Error ? error.message : String(error),
+            workspacePath: currentWorkspacePath,
+          });
         }
       }
     }
@@ -65,58 +73,43 @@ export function useSessionContextGraph({
     return () => {
       disposed = true;
     };
-  }, [selectedSession?.cwd, selectedSession?.id]);
+  }, [architectureGraph, workspacePath]);
 
-  useEffect(() => {
-    let disposed = false;
+  const { contextGraph, layoutErrorMessage } = useMemo(() => {
+    const model = buildContextGraph({
+      architectureGraph,
+      fileActivity,
+      includeEntireWorkspace,
+      pinnedFilePaths,
+      selectedFilePath,
+      workspacePath,
+    });
 
-    async function layoutGraph() {
-      const model = buildContextGraph({
-        architectureGraph,
-        fileActivity,
-        includeEntireWorkspace,
-        pinnedFilePaths,
-        selectedFilePath,
-        workspacePath: selectedSession?.cwd ?? null,
-      });
-
-      setIsLayouting(true);
-
-      try {
-        const layoutedModel = layoutContextGraphWithHierarchy(model);
-
-        if (!disposed) {
-          setContextGraph(layoutedModel);
-        }
-      } catch (error) {
-        if (!disposed) {
-          setContextGraph(model);
-          setErrorMessage(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (!disposed) {
-          setIsLayouting(false);
-        }
-      }
+    try {
+      return {
+        contextGraph: layoutContextGraphWithHierarchy(model),
+        layoutErrorMessage: "",
+      };
+    } catch (error) {
+      return {
+        contextGraph: model,
+        layoutErrorMessage: error instanceof Error ? error.message : String(error),
+      };
     }
-
-    void layoutGraph();
-
-    return () => {
-      disposed = true;
-    };
   }, [
     architectureGraph,
     fileActivity,
     includeEntireWorkspace,
     pinnedFilePaths,
     selectedFilePath,
-    selectedSession?.cwd,
+    workspacePath,
   ]);
 
   return {
     contextGraph,
-    errorMessage,
-    isLoading: isIndexing || isLayouting,
+    errorMessage:
+      indexError?.workspacePath === workspacePath ? indexError.message : layoutErrorMessage,
+    isLoading:
+      Boolean(workspacePath) && !architectureGraph && indexError?.workspacePath !== workspacePath,
   };
 }

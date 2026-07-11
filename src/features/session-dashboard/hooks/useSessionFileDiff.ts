@@ -5,7 +5,7 @@ import type {
   AgentSessionFileDiff,
   AgentSessionSummary,
   SelectedActivityFile,
-} from "@/lib/session-watch";
+} from "@/features/session-dashboard/lib/session-watch";
 
 export function useSessionFileDiff(
   selectedSession: AgentSessionSummary | null,

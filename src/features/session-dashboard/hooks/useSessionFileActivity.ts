@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 
-import type { AgentSessionFileActivity, AgentSessionSummary } from "@/lib/session-watch";
+import type {
+  AgentSessionFileActivity,
+  AgentSessionSummary,
+} from "@/features/session-dashboard/lib/session-watch";
 
 const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
   readFiles: [],

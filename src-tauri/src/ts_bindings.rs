@@ -21,6 +21,7 @@ fn bindings_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("src")
+        .join("shared")
         .join("lib")
         .join("generated")
         .join("bindings.ts")
