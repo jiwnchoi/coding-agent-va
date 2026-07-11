@@ -1,5 +1,22 @@
 // This file is generated from Rust types. Do not edit by hand.
 
+export type AppTheme = "system" | "light" | "dark";
+
+export type AppFont = "geist" | "system-sans" | "system-serif";
+
+export type MonacoTheme = "system" | "light" | "dark";
+
+export type RuntimeHomes = { claude: string; codex: string; pi: string };
+
+export type AppSettings = {
+  theme: AppTheme;
+  font: AppFont;
+  monacoTheme: MonacoTheme;
+  hideCommittedFiles: boolean;
+  keyboardShortcuts: { [key in string]: string };
+  runtimeHomes: RuntimeHomes;
+};
+
 export type AgentSessionProvider = "codex" | "claude" | "pi";
 
 export type AgentRuntimeSource = {

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   AgentSessionFileActivity,
@@ -16,7 +16,8 @@ const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
 
 export function useSessionFileActivity(
   selectedSession: AgentSessionSummary | null,
-  fileActivityRefreshVersion: number
+  fileActivityRefreshVersion: number,
+  hideCommittedFiles: boolean
 ) {
   const [loadedFileActivity, setLoadedFileActivity] =
     useState<AgentSessionFileActivity>(EMPTY_FILE_ACTIVITY);
@@ -38,6 +39,7 @@ export function useSessionFileActivity(
           provider: currentSession.provider,
           transcriptPath: currentSession.transcriptPath,
           cwd: currentSession.cwd,
+          hideCommittedFiles,
         });
 
         if (!disposed) {
@@ -55,15 +57,9 @@ export function useSessionFileActivity(
     return () => {
       disposed = true;
     };
-  }, [fileActivityRefreshVersion, selectedSession]);
+  }, [fileActivityRefreshVersion, hideCommittedFiles, selectedSession]);
 
-  const fileActivity = useMemo(() => {
-    if (!selectedSession) {
-      return EMPTY_FILE_ACTIVITY;
-    }
-
-    return loadedFileActivity;
-  }, [loadedFileActivity, selectedSession]);
+  const fileActivity = selectedSession ? loadedFileActivity : EMPTY_FILE_ACTIVITY;
 
   return {
     fileActivity,

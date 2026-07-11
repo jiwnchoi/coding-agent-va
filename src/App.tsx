@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -23,6 +24,7 @@ import {
   type AgentSessionSummary,
   type SelectedActivityFile,
 } from "@/features/session-dashboard/lib/session-watch";
+import { SettingsView, useAppSettings } from "@/features/settings";
 import { useEditorTheme } from "@/shared/hooks/useEditorTheme";
 import type { KeyboardShortcut } from "@/shared/hooks/useKeyboardShortcuts";
 import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
@@ -31,6 +33,8 @@ import { cn } from "@/shared/lib/utils";
 import styles from "./App.module.css";
 
 function App() {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const { settings, settingsError, updateSettings } = useAppSettings();
   const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
   const {
     sessions,
@@ -58,11 +62,12 @@ function App() {
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const { fileActivity, isFileActivityLoading } = useSessionFileActivity(
     selectedSession,
-    fileActivityRefreshVersion
+    fileActivityRefreshVersion,
+    settings.hideCommittedFiles
   );
   const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
     useSessionFileDiff(selectedSession, selectedActivityFile);
-  const editorTheme = useEditorTheme();
+  const editorTheme = useEditorTheme(settings.monacoTheme);
   const selectedSessionLabel =
     selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
 
@@ -108,15 +113,18 @@ function App() {
 
       handleCloseSession(selectedSessionId);
     },
+    toggleSettings: () => setIsSettingsOpen((isOpen) => !isOpen),
   };
 
-  const shortcuts = buildShortcuts(shortcutActions);
+  const shortcuts = buildShortcuts(shortcutActions, settings.keyboardShortcuts);
 
   useEffect(() => {
     let disposed = false;
 
     async function loadSessions() {
-      const result = await invoke<AgentSessionList>("list_agent_sessions");
+      const result = await invoke<AgentSessionList>("list_agent_sessions", {
+        runtimeHomes: settings.runtimeHomes,
+      });
       if (disposed) {
         return;
       }
@@ -131,7 +139,7 @@ function App() {
     return () => {
       disposed = true;
     };
-  }, [reconcileSessions]);
+  }, [reconcileSessions, settings.runtimeHomes]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -170,51 +178,78 @@ function App() {
           "bg-background/90 fixed inset-x-0 top-0 z-20 backdrop-blur"
         )}>
         <div className="flex h-full w-full items-center gap-2 pr-3 pl-18 sm:pr-4 sm:pl-20">
-          <div className="shrink-0">
-            <SessionPickerDropdown
-              nowMs={nowMs}
-              searchQuery={searchQuery}
-              sessions={sessions}
-              setSearchQuery={setSearchQuery}
-              onSelectSession={handleSelectSession}
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <SessionTabBar
-              nowMs={nowMs}
-              openSessions={openSessions}
-              selectedSessionId={selectedSessionId}
-              onCloseSession={handleCloseSession}
-              onSelectSession={handleSelectSession}
-            />
-          </div>
+          {isSettingsOpen ? (
+            <p className="min-w-0 flex-1 truncate text-sm font-medium">Settings</p>
+          ) : (
+            <>
+              <div className="shrink-0">
+                <SessionPickerDropdown
+                  nowMs={nowMs}
+                  searchQuery={searchQuery}
+                  sessions={sessions}
+                  setSearchQuery={setSearchQuery}
+                  onSelectSession={handleSelectSession}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <SessionTabBar
+                  nowMs={nowMs}
+                  openSessions={openSessions}
+                  selectedSessionId={selectedSessionId}
+                  onCloseSession={handleCloseSession}
+                  onSelectSession={handleSelectSession}
+                />
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            data-window-control-exclusion
+            aria-label={isSettingsOpen ? "Close settings" : "Open settings"}
+            title="Settings (⌘,)"
+            onClick={() => setIsSettingsOpen((isOpen) => !isOpen)}
+            className="text-muted-foreground hover:bg-accent hover:text-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors">
+            <Settings className="size-4" />
+          </button>
         </div>
       </header>
       <main className={cn(styles.main, "relative flex h-full min-h-0")}>
-        <div
-          className={cn(
-            styles.contextGraphTitle,
-            "border-border text-card-foreground absolute left-4 z-[6] truncate rounded-lg border px-3 py-2.5 text-sm leading-5 font-medium"
-          )}>
-          {selectedSessionLabel}
-        </div>
-        <div className="min-w-0 flex-1">
-          <SessionContextGraphView
-            fileActivity={fileActivity}
-            isFileActivityLoading={isFileActivityLoading || isLoading}
-            selectedActivityFile={selectedActivityFile}
-            selectedSession={selectedSession}
-            onSelectFile={setSelectedActivityFile}
+        {isSettingsOpen ? (
+          <SettingsView
+            runtimeSources={runtimeSources}
+            settings={settings}
+            settingsError={settingsError}
+            onClose={() => setIsSettingsOpen(false)}
+            onSettingsChange={updateSettings}
           />
-        </div>
-        <SessionFileViewer
-          errorMessage={fileDiffErrorMessage}
-          isLoading={Boolean(isFileDiffLoading)}
-          onClose={handleCloseFileViewer}
-          selectedActivityFile={selectedActivityFile}
-          selectedFileDiff={selectedFileDiff}
-          theme={editorTheme}
-        />
+        ) : (
+          <>
+            <div
+              className={cn(
+                styles.contextGraphTitle,
+                "border-border text-card-foreground absolute left-4 z-[6] truncate rounded-lg border px-3 py-2.5 text-sm leading-5 font-medium"
+              )}>
+              {selectedSessionLabel}
+            </div>
+            <div className="min-w-0 flex-1">
+              <SessionContextGraphView
+                fileActivity={fileActivity}
+                isFileActivityLoading={isFileActivityLoading || isLoading}
+                selectedActivityFile={selectedActivityFile}
+                selectedSession={selectedSession}
+                onSelectFile={setSelectedActivityFile}
+              />
+            </div>
+            <SessionFileViewer
+              errorMessage={fileDiffErrorMessage}
+              isLoading={Boolean(isFileDiffLoading)}
+              onClose={handleCloseFileViewer}
+              selectedActivityFile={selectedActivityFile}
+              selectedFileDiff={selectedFileDiff}
+              theme={editorTheme}
+            />
+          </>
+        )}
       </main>
     </div>
   );

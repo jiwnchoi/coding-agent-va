@@ -88,7 +88,7 @@ fn collect_tool_call_activity(
                 );
             }
         }
-        "write" | "edit" | "multiedit" | "notebookedit" => {
+        "write" | "notebookedit" => {
             if let Some(file_path) = tool_file_path(arguments) {
                 insert_activity_path(
                     &mut activity.edited_files,
@@ -96,6 +96,25 @@ fn collect_tool_call_activity(
                     workspace_root,
                     timestamp_ms,
                 );
+                activity.record_edit_fragment(file_path, workspace_root, None);
+            }
+        }
+        "edit" | "multiedit" => {
+            if let Some(file_path) = tool_file_path(arguments) {
+                insert_activity_path(
+                    &mut activity.edited_files,
+                    file_path,
+                    workspace_root,
+                    timestamp_ms,
+                );
+                let fragments = edit_fragments(arguments);
+                if fragments.is_empty() {
+                    activity.record_edit_fragment(file_path, workspace_root, None);
+                } else {
+                    for fragment in fragments {
+                        activity.record_edit_fragment(file_path, workspace_root, Some(fragment));
+                    }
+                }
             }
         }
         "bash" => {
@@ -122,10 +141,31 @@ fn collect_tool_call_activity(
                     timestamp_ms,
                     &mut activity.deleted_files,
                 );
+                let edited_paths = activity.edited_files.keys().cloned().collect::<Vec<_>>();
+                for path in edited_paths {
+                    activity.record_edit_fragment(&path, None, None);
+                }
             }
         }
         _ => {}
     }
+}
+
+fn edit_fragments(arguments: &serde_json::Value) -> Vec<&str> {
+    let mut fragments = ["new_string", "newString", "new_text", "newText", "content"]
+        .into_iter()
+        .filter_map(|key| json_str(arguments, &[key]))
+        .collect::<Vec<_>>();
+    if let Some(edits) = arguments.get("edits").and_then(serde_json::Value::as_array) {
+        for edit in edits {
+            fragments.extend(
+                ["new_string", "newString", "new_text", "newText", "content"]
+                    .into_iter()
+                    .filter_map(|key| json_str(edit, &[key])),
+            );
+        }
+    }
+    fragments
 }
 
 fn tool_call_name(item: &serde_json::Value, schema: ToolSchema) -> Option<&str> {
@@ -166,4 +206,22 @@ fn tool_file_path(arguments: &serde_json::Value) -> Option<&str> {
     json_str(arguments, &["file_path"])
         .or_else(|| json_str(arguments, &["filePath"]))
         .or_else(|| json_str(arguments, &["path"]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edit_fragments;
+
+    #[test]
+    fn extracts_structured_edit_fragments() {
+        let arguments = serde_json::json!({
+            "file_path": "src/app.ts",
+            "edits": [
+                { "old_string": "one", "new_string": "two" },
+                { "old_string": "three", "new_string": "four" }
+            ]
+        });
+
+        assert_eq!(edit_fragments(&arguments), vec!["two", "four"]);
+    }
 }

@@ -1,7 +1,8 @@
-use super::import_extractor::extract_imports;
+use super::import_extractor::{extract_code_identifiers, extract_imports};
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
-use std::collections::{BTreeSet, HashSet};
+use super::symbol_extractor::extract_declarations;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
@@ -28,9 +29,46 @@ pub struct ImpactedFileRelation {
     pub import_specifier: String,
 }
 
+#[derive(Debug)]
+struct ImporterRelation {
+    importer: PathBuf,
+    import_specifier: String,
+    statement: String,
+    code_identifiers: HashSet<String>,
+    forwards: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SessionFileEdit {
+    pub path: PathBuf,
+    pub fragments: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ChangedSymbols {
+    exported: BTreeSet<String>,
+    usages: BTreeSet<String>,
+}
+
+#[cfg(test)]
 pub fn find_impacted_file_relations(
     workspace_root: &Path,
     changed_files: &[PathBuf],
+) -> Result<Vec<ImpactedFileRelation>, String> {
+    let edits = changed_files
+        .iter()
+        .cloned()
+        .map(|path| SessionFileEdit {
+            path,
+            fragments: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    find_session_impacted_file_relations(workspace_root, &edits)
+}
+
+pub fn find_session_impacted_file_relations(
+    workspace_root: &Path,
+    edits: &[SessionFileEdit],
 ) -> Result<Vec<ImpactedFileRelation>, String> {
     if !workspace_root.exists() {
         return Ok(Vec::new());
@@ -39,14 +77,14 @@ pub fn find_impacted_file_relations(
     let workspace_root = workspace_root
         .canonicalize()
         .map_err(|error| format!("failed to canonicalize workspace path: {error}"))?;
-    let changed_files = changed_files
+    let changed_files = edits
         .iter()
-        .map(|path| normalize_path(path, &workspace_root))
+        .map(|edit| normalize_path(&edit.path, &workspace_root))
         .collect::<HashSet<_>>();
     let mut known_files = collect_known_files(&workspace_root)?;
     known_files.extend(changed_files.iter().cloned());
 
-    let mut impacted_relations = BTreeSet::<ImpactedFileRelation>::new();
+    let mut importers_by_dependency = HashMap::<PathBuf, Vec<ImporterRelation>>::new();
 
     for importer in &known_files {
         if !importer.is_file() {
@@ -62,7 +100,7 @@ pub fn find_impacted_file_relations(
         let Ok(tree) = parse_source(language, &source) else {
             continue;
         };
-
+        let code_identifiers = extract_code_identifiers(language, &source, tree.root_node());
         for import in extract_imports(language, &source, tree.root_node()) {
             for resolved in resolve_internal_import(
                 importer,
@@ -71,27 +109,189 @@ pub fn find_impacted_file_relations(
                 &workspace_root,
                 &known_files,
             ) {
-                if !changed_files.contains(&resolved) || changed_files.contains(importer) {
+                importers_by_dependency
+                    .entry(resolved)
+                    .or_default()
+                    .push(ImporterRelation {
+                        importer: importer.clone(),
+                        import_specifier: import.specifier.clone(),
+                        statement: import.statement.clone(),
+                        code_identifiers: code_identifiers.clone(),
+                        forwards: import.forwards,
+                    });
+            }
+        }
+    }
+
+    let mut impacted_relations = BTreeSet::<ImpactedFileRelation>::new();
+    for edit in edits {
+        let changed_file_path = normalize_path(&edit.path, &workspace_root);
+        let Some(changed_file) = relative_workspace_path(&changed_file_path, &workspace_root)
+        else {
+            continue;
+        };
+        let changed_symbols = changed_symbols(&changed_file_path, &edit.fragments);
+        let mut pending = VecDeque::from([(changed_file_path.clone(), changed_symbols)]);
+        let mut visited_reexports = HashSet::new();
+
+        while let Some((dependency, symbols)) = pending.pop_front() {
+            let Some(importers) = importers_by_dependency.get(&dependency) else {
+                continue;
+            };
+            for relation in importers {
+                if changed_files.contains(&relation.importer) {
                     continue;
                 }
-
-                let Some(changed_file) = relative_workspace_path(&resolved, &workspace_root) else {
+                let referenced_symbols = symbols.as_ref().map(|symbols| {
+                    let exported = referenced_names(&relation.statement, &symbols.exported);
+                    let usages = if symbols.usages == symbols.exported {
+                        exported.clone()
+                    } else {
+                        symbols.usages.clone()
+                    };
+                    ChangedSymbols { exported, usages }
+                });
+                if referenced_symbols
+                    .as_ref()
+                    .is_some_and(|symbols| symbols.exported.is_empty())
+                {
+                    continue;
+                }
+                let is_actual_use =
+                    referenced_symbols
+                        .as_ref()
+                        .map_or(!relation.forwards, |symbols| {
+                            symbols
+                                .usages
+                                .iter()
+                                .any(|symbol| relation.code_identifiers.contains(symbol))
+                        });
+                if !is_actual_use {
+                    let visit_key =
+                        format!("{}:{:?}", relation.importer.display(), referenced_symbols);
+                    if visited_reexports.insert(visit_key) {
+                        pending.push_back((relation.importer.clone(), referenced_symbols));
+                    }
+                    continue;
+                }
+                let Some(impacted_file) =
+                    relative_workspace_path(&relation.importer, &workspace_root)
+                else {
                     continue;
                 };
-                let Some(impacted_file) = relative_workspace_path(importer, &workspace_root) else {
-                    continue;
-                };
-
                 impacted_relations.insert(ImpactedFileRelation {
-                    changed_file,
+                    changed_file: changed_file.clone(),
                     impacted_file,
-                    import_specifier: import.specifier.clone(),
+                    import_specifier: relation.import_specifier.clone(),
                 });
             }
         }
     }
 
     Ok(impacted_relations.into_iter().collect())
+}
+
+fn changed_symbols(path: &Path, fragments: &[String]) -> Option<ChangedSymbols> {
+    if fragments.is_empty() || fragments.iter().any(String::is_empty) || !path.is_file() {
+        return None;
+    }
+    let language = detect_language(path)?;
+    let source = fs::read_to_string(path).ok()?;
+    let tree = parse_source(language, &source).ok()?;
+    let symbols = extract_declarations(language, &source, tree.root_node());
+    let mut changed_ranges = Vec::new();
+    for fragment in fragments {
+        append_matching_ranges(&source, fragment, &mut changed_ranges);
+        for line in fragment.lines().filter(|line| !line.trim().is_empty()) {
+            append_matching_ranges(&source, line, &mut changed_ranges);
+        }
+    }
+    let mut exported = BTreeSet::new();
+    let mut usages = BTreeSet::new();
+    for (start, end) in changed_ranges {
+        let mut overlapping = symbols
+            .iter()
+            .filter(|symbol| start < symbol.end_byte && symbol.start_byte < end)
+            .collect::<Vec<_>>();
+        overlapping.sort_by_key(|symbol| symbol.end_byte - symbol.start_byte);
+        let Some(first) = overlapping.first() else {
+            continue;
+        };
+        let usage = overlapping
+            .iter()
+            .find(|symbol| is_callable_declaration(&symbol.kind))
+            .copied()
+            .unwrap_or(first);
+        let exported_symbol = overlapping.last().unwrap_or(first);
+        usages.insert(usage.name.clone());
+        exported.insert(exported_symbol.name.clone());
+    }
+    (!exported.is_empty()).then_some(ChangedSymbols { exported, usages })
+}
+
+fn is_callable_declaration(kind: &str) -> bool {
+    matches!(
+        kind,
+        "function_declaration"
+            | "method_definition"
+            | "function_item"
+            | "function_definition"
+            | "method_declaration"
+            | "method"
+    )
+}
+
+fn append_matching_ranges(source: &str, fragment: &str, ranges: &mut Vec<(usize, usize)>) {
+    if fragment.is_empty() {
+        return;
+    }
+    ranges.extend(
+        source
+            .match_indices(fragment)
+            .map(|(start, value)| (start, start + value.len())),
+    );
+}
+
+fn referenced_names(statement: &str, symbols: &BTreeSet<String>) -> BTreeSet<String> {
+    let words = statement
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    if let Some(alias_index) = words.iter().position(|word| *word == "as") {
+        if words.first() == Some(&"import") && words.get(alias_index.wrapping_sub(1)) == Some(&"*")
+        {
+            return words
+                .get(alias_index + 1)
+                .map(|alias| BTreeSet::from([(*alias).to_string()]))
+                .unwrap_or_default();
+        }
+    }
+    let mut referenced = BTreeSet::new();
+    for symbol in symbols {
+        for (index, word) in words.iter().enumerate() {
+            if *word != symbol {
+                continue;
+            }
+            let name = if words.get(index + 1) == Some(&"as") {
+                words.get(index + 2).copied().unwrap_or(word)
+            } else {
+                word
+            };
+            referenced.insert(name.to_string());
+        }
+    }
+    if !referenced.is_empty() {
+        for symbol in symbols {
+            if !words.iter().any(|word| *word == symbol) {
+                referenced.insert(symbol.clone());
+            }
+        }
+    }
+    if referenced.is_empty() && (statement.contains('*') || statement.trim_start().contains("mod "))
+    {
+        return symbols.clone();
+    }
+    referenced
 }
 
 fn collect_known_files(workspace_root: &Path) -> Result<HashSet<PathBuf>, String> {
@@ -169,10 +369,8 @@ fn resolve_rust_import(
             path = remainder;
         }
         (base, path)
-    } else if !specifier.contains("::") {
-        (importer_directory.to_path_buf(), specifier)
     } else {
-        return Vec::new();
+        (importer_directory.to_path_buf(), specifier)
     };
 
     let components = module_path.split("::").collect::<Vec<_>>();

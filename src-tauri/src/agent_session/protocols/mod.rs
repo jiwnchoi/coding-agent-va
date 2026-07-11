@@ -2,7 +2,7 @@ mod claude;
 mod codex;
 mod pi;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 pub(crate) use claude::ClaudeSessionProtocol;
@@ -33,17 +33,27 @@ pub(crate) trait AgentSessionProtocol: Send + Sync {
         &self,
         transcript_path: &Path,
         cwd: Option<&str>,
+        hide_committed_files: bool,
     ) -> Result<AgentSessionFileActivity, String> {
         let mut activity = self.collect_file_activity(transcript_path, cwd)?;
 
-        filter_written_files_by_git_status(
-            cwd,
-            &mut activity.edited_files,
-            &mut activity.deleted_files,
-        );
+        if hide_committed_files {
+            filter_written_files_by_git_status(
+                cwd,
+                &mut activity.edited_files,
+                &mut activity.deleted_files,
+            );
+            activity
+                .edit_fragments
+                .retain(|path, _| activity.edited_files.contains_key(path));
+        }
         remove_edited_files_from_read_files(cwd, &mut activity.read_files, &activity.edited_files);
-        let impacted_relations =
-            resolve_impacted_file_relations(cwd, &activity.edited_files, &activity.deleted_files)?;
+        let impacted_relations = resolve_impacted_file_relations(
+            cwd,
+            &activity.edited_files,
+            &activity.deleted_files,
+            &activity.edit_fragments,
+        )?;
         let impacted_files = impacted_relations
             .iter()
             .map(|relation| relation.impacted_file.clone())
@@ -83,12 +93,19 @@ impl AgentSessionProvider {
     }
 }
 
-pub(crate) fn default_runtime_sources() -> Vec<AgentRuntimeSource> {
+pub(crate) fn default_runtime_sources(
+    runtime_home_overrides: Option<&BTreeMap<String, String>>,
+) -> Vec<AgentRuntimeSource> {
     AgentSessionProvider::all()
         .into_iter()
         .filter_map(|provider| {
             let protocol = provider.protocol();
-            let runtime_home = protocol.default_runtime_home()?;
+            let default_runtime_home = protocol.default_runtime_home()?;
+            let runtime_home = runtime_home_overrides
+                .and_then(|overrides| overrides.get(provider_key(provider)))
+                .filter(|path| !path.trim().is_empty())
+                .map(PathBuf::from)
+                .unwrap_or(default_runtime_home);
             Some(AgentRuntimeSource {
                 provider,
                 label: provider.label().to_string(),

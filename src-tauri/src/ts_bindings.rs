@@ -10,6 +10,7 @@ use crate::agent_session::{
     AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionProvider, AgentSessionSummary,
     SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration, SessionWatchTarget,
 };
+use crate::app_config::{AppFont, AppSettings, AppTheme, MonacoTheme, RuntimeHomes};
 use crate::indexer::graph::{
     ArchitectureEdge, ArchitectureGraph, ArchitectureNode, EdgeKind, NodeKind,
 };
@@ -40,6 +41,11 @@ fn generated_typescript_bindings() -> String {
     let config = Config::default().with_large_int("number");
     let mut bindings = String::from(GENERATED_BINDINGS_HEADER);
 
+    push_binding::<AppTheme>(&mut bindings, &config);
+    push_binding::<AppFont>(&mut bindings, &config);
+    push_binding::<MonacoTheme>(&mut bindings, &config);
+    push_binding::<RuntimeHomes>(&mut bindings, &config);
+    push_binding::<AppSettings>(&mut bindings, &config);
     push_binding::<AgentSessionProvider>(&mut bindings, &config);
     push_binding::<AgentRuntimeSource>(&mut bindings, &config);
     push_binding::<AgentSessionSummary>(&mut bindings, &config);

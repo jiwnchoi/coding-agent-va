@@ -5,6 +5,8 @@ use tree_sitter::Node;
 pub struct ExtractedSymbol {
     pub kind: String,
     pub name: String,
+    pub start_byte: usize,
+    pub end_byte: usize,
 }
 
 pub fn extract_symbols(
@@ -14,8 +16,85 @@ pub fn extract_symbols(
 ) -> Vec<ExtractedSymbol> {
     let mut cursor = root.walk();
     root.named_children(&mut cursor)
-        .filter_map(|child| symbol_from_node(language, source, child))
+        .flat_map(|child| symbols_from_top_level_node(language, source, child))
         .collect()
+}
+
+pub fn extract_declarations(
+    language: SupportedLanguage,
+    source: &str,
+    root: Node<'_>,
+) -> Vec<ExtractedSymbol> {
+    let mut symbols = Vec::new();
+    collect_symbols(language, source, root, &mut symbols);
+    symbols
+}
+
+fn symbols_from_top_level_node(
+    language: SupportedLanguage,
+    source: &str,
+    node: Node<'_>,
+) -> Vec<ExtractedSymbol> {
+    if matches!(node.kind(), "lexical_declaration" | "variable_declaration") {
+        let mut cursor = node.walk();
+        let variables = node
+            .named_children(&mut cursor)
+            .filter(|child| child.kind() == "variable_declarator")
+            .filter_map(|child| symbol_from_named_node(source, child))
+            .collect::<Vec<_>>();
+        if !variables.is_empty() {
+            return variables;
+        }
+    }
+    if let Some(symbol) = symbol_from_node(language, source, node) {
+        return vec![symbol];
+    }
+    if !matches!(node.kind(), "export_statement" | "decorated_definition") {
+        return Vec::new();
+    }
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .flat_map(|child| symbols_from_top_level_node(language, source, child))
+        .collect()
+}
+
+fn collect_symbols(
+    language: SupportedLanguage,
+    source: &str,
+    node: Node<'_>,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    if matches!(node.kind(), "lexical_declaration" | "variable_declaration") {
+        let mut cursor = node.walk();
+        for variable in node
+            .named_children(&mut cursor)
+            .filter(|child| child.kind() == "variable_declarator")
+            .filter_map(|child| symbol_from_named_node(source, child))
+        {
+            symbols.push(variable);
+        }
+    } else if let Some(symbol) = symbol_from_node(language, source, node) {
+        symbols.push(symbol);
+    }
+    for index in 0..node.named_child_count() {
+        if let Some(child) = node.named_child(index as u32) {
+            collect_symbols(language, source, child, symbols);
+        }
+    }
+}
+
+fn symbol_from_named_node(source: &str, node: Node<'_>) -> Option<ExtractedSymbol> {
+    let name = node
+        .child_by_field_name("name")?
+        .utf8_text(source.as_bytes())
+        .ok()?
+        .to_string();
+    Some(ExtractedSymbol {
+        kind: node.kind().to_string(),
+        name,
+        start_byte: node.start_byte(),
+        end_byte: node.end_byte(),
+    })
 }
 
 fn symbol_from_node(
@@ -37,6 +116,8 @@ fn symbol_from_node(
     Some(ExtractedSymbol {
         kind: kind.to_string(),
         name,
+        start_byte: node.start_byte(),
+        end_byte: node.end_byte(),
     })
 }
 
@@ -51,6 +132,7 @@ fn symbol_node_kinds(language: SupportedLanguage) -> &'static [&'static str] {
         | SupportedLanguage::TypeScript
         | SupportedLanguage::Tsx => &[
             "function_declaration",
+            "method_definition",
             "class_declaration",
             "interface_declaration",
             "type_alias_declaration",

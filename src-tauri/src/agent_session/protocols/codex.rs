@@ -147,16 +147,14 @@ impl AgentSessionProtocol for CodexSessionProtocol {
                         &envelope.payload,
                         workspace_root.as_deref(),
                         timestamp_ms,
-                        &mut activity.edited_files,
-                        &mut activity.deleted_files,
+                        &mut activity,
                     );
                 }
                 "event_msg" => collect_codex_written_files(
                     &envelope.payload,
                     workspace_root.as_deref(),
                     timestamp_ms,
-                    &mut activity.edited_files,
-                    &mut activity.deleted_files,
+                    &mut activity,
                 ),
                 _ => {}
             }

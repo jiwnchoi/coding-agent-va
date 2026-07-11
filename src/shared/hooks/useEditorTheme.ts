@@ -1,20 +1,24 @@
 import { useSyncExternalStore } from "react";
 
+import type { MonacoTheme } from "@/features/settings";
 import { SHIKI_DARK_THEME, SHIKI_LIGHT_THEME } from "@/shared/lib/editor/monaco-shiki";
 
 function subscribe(callback: () => void) {
-  const darkModeMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  darkModeMediaQuery.addEventListener("change", callback);
-
-  return () => {
-    darkModeMediaQuery.removeEventListener("change", callback);
-  };
+  const observer = new MutationObserver(callback);
+  observer.observe(document.documentElement, { attributeFilter: ["class"], attributes: true });
+  return () => observer.disconnect();
 }
 
-function getSnapshot() {
-  return document.documentElement.classList.contains("dark") ? SHIKI_DARK_THEME : SHIKI_LIGHT_THEME;
-}
+export function useEditorTheme(
+  theme: MonacoTheme
+): typeof SHIKI_LIGHT_THEME | typeof SHIKI_DARK_THEME {
+  const appTheme = useSyncExternalStore(
+    subscribe,
+    () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
+    () => "light"
+  );
 
-export function useEditorTheme(): typeof SHIKI_LIGHT_THEME | typeof SHIKI_DARK_THEME {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  if (theme === "light") return SHIKI_LIGHT_THEME;
+  if (theme === "dark") return SHIKI_DARK_THEME;
+  return appTheme === "dark" ? SHIKI_DARK_THEME : SHIKI_LIGHT_THEME;
 }

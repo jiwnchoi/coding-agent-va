@@ -8,7 +8,8 @@ use std::path::PathBuf;
 pub(crate) use tool_calls::{read_tool_call_file_activity, ToolSchema};
 
 use crate::indexer::workspace_dependencies::{
-    find_impacted_file_relations, ImpactedFileRelation as WorkspaceImpactedFileRelation,
+    find_session_impacted_file_relations, ImpactedFileRelation as WorkspaceImpactedFileRelation,
+    SessionFileEdit,
 };
 
 use super::git::read_git_worktree_status;
@@ -20,6 +21,26 @@ pub(crate) struct ActivityAccumulator {
     pub(crate) read_files: HashMap<String, u64>,
     pub(crate) edited_files: HashMap<String, u64>,
     pub(crate) deleted_files: HashMap<String, u64>,
+    pub(crate) edit_fragments: HashMap<String, Vec<String>>,
+}
+
+impl ActivityAccumulator {
+    pub(crate) fn record_edit_fragment(
+        &mut self,
+        path: &str,
+        workspace_root: Option<&std::path::Path>,
+        fragment: Option<&str>,
+    ) {
+        let path = workspace_root
+            .and_then(|root| normalize_written_activity_path(path, root.to_str()))
+            .unwrap_or_else(|| path.to_string());
+        let fragments = self.edit_fragments.entry(path).or_default();
+        if let Some(fragment) = fragment.filter(|value| !value.trim().is_empty()) {
+            fragments.push(fragment.to_string());
+        } else if !fragments.iter().any(String::is_empty) {
+            fragments.push(String::new());
+        }
+    }
 }
 
 pub(crate) fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> {
@@ -32,18 +53,25 @@ pub(crate) fn resolve_impacted_file_relations(
     cwd: Option<&str>,
     edited_files: &HashMap<String, u64>,
     deleted_files: &HashMap<String, u64>,
+    edit_fragments: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<AgentSessionImpactedFileRelation>, String> {
     let Some(workspace_root) = cwd.map(PathBuf::from) else {
         return Ok(Vec::new());
     };
 
-    let changed_files = edited_files
+    let edits = edited_files
         .keys()
-        .chain(deleted_files.keys())
-        .map(PathBuf::from)
+        .map(|path| SessionFileEdit {
+            path: PathBuf::from(path),
+            fragments: edit_fragments.get(path).cloned().unwrap_or_default(),
+        })
+        .chain(deleted_files.keys().map(|path| SessionFileEdit {
+            path: PathBuf::from(path),
+            fragments: Vec::new(),
+        }))
         .collect::<Vec<_>>();
 
-    find_impacted_file_relations(&workspace_root, &changed_files).map(|relations| {
+    find_session_impacted_file_relations(&workspace_root, &edits).map(|relations| {
         relations
             .into_iter()
             .map(agent_impacted_file_relation_from_workspace)

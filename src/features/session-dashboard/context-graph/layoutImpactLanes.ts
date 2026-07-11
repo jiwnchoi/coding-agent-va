@@ -1,54 +1,25 @@
-import { type EdgeSide, IMPACT_EDGE_LANE_OFFSET_STEP } from "./layoutConstants";
+import {
+  type EdgeSide,
+  IMPACT_EDGE_LANE_OFFSET_STEP,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+} from "./layoutConstants";
 import { toNodeCenter } from "./layoutHandles";
 import type { ContextGraphEdgeData, ContextGraphModel } from "./types";
 
-export function distributeImpactEdgeTargets(
+type EdgeEndpoint = "source" | "target";
+type EdgeOffsets = {
+  sourceOffset?: { x: number; y: number };
+  targetOffset?: { x: number; y: number };
+};
+
+export function distributeImpactEdgeLanes(
   edges: ContextGraphModel["impactEdges"],
   positionById: Map<string, { x: number; y: number }>
 ) {
-  const edgesByTargetHandle = new Map<string, ContextGraphModel["impactEdges"]>();
-
-  for (const edge of edges) {
-    const key = `${edge.target}:${edge.targetHandle ?? ""}`;
-    edgesByTargetHandle.set(key, [...(edgesByTargetHandle.get(key) ?? []), edge]);
-  }
-
-  const laneOffsetByEdgeId = new Map<
-    string,
-    {
-      sourceOffset?: { x: number; y: number };
-      targetOffset?: { x: number; y: number };
-    }
-  >();
-
-  for (const targetEdges of edgesByTargetHandle.values()) {
-    if (targetEdges.length < 2) {
-      continue;
-    }
-
-    const targetSide = sideFromHandleId(targetEdges[0].targetHandle);
-
-    if (!targetSide) {
-      continue;
-    }
-
-    const sortedTargetEdges = [...targetEdges].sort((left, right) => {
-      const leftCenter = centerForEdgeSource(left, positionById);
-      const rightCenter = centerForEdgeSource(right, positionById);
-
-      return compareSourceCentersForTargetSide(targetSide, leftCenter, rightCenter);
-    });
-
-    for (const [index, edge] of sortedTargetEdges.entries()) {
-      const offset = (index - (sortedTargetEdges.length - 1) / 2) * IMPACT_EDGE_LANE_OFFSET_STEP;
-      const sourceSide = sideFromHandleId(edge.sourceHandle);
-
-      laneOffsetByEdgeId.set(edge.id, {
-        sourceOffset: sourceSide ? offsetAlongSide(sourceSide, offset) : undefined,
-        targetOffset: offsetAlongSide(targetSide, offset),
-      });
-    }
-  }
+  const laneOffsetByEdgeId = new Map<string, EdgeOffsets>();
+  distributeEndpoint(edges, positionById, laneOffsetByEdgeId, "source");
+  distributeEndpoint(edges, positionById, laneOffsetByEdgeId, "target");
 
   return edges.map((edge) => {
     const edgeData: ContextGraphEdgeData = edge.data ?? {
@@ -67,25 +38,83 @@ export function distributeImpactEdgeTargets(
   });
 }
 
-function compareSourceCentersForTargetSide(
-  targetSide: EdgeSide,
+function distributeEndpoint(
+  edges: ContextGraphModel["impactEdges"],
+  positionById: Map<string, { x: number; y: number }>,
+  laneOffsetByEdgeId: Map<string, EdgeOffsets>,
+  endpoint: EdgeEndpoint
+) {
+  const edgesByHandle = new Map<string, ContextGraphModel["impactEdges"]>();
+  for (const edge of edges) {
+    const key = `${edge[endpoint]}:${edge[`${endpoint}Handle`] ?? ""}`;
+    edgesByHandle.set(key, [...(edgesByHandle.get(key) ?? []), edge]);
+  }
+
+  for (const groupedEdges of edgesByHandle.values()) {
+    const side = sideFromHandleId(groupedEdges[0]?.[`${endpoint}Handle`]);
+    if (groupedEdges.length < 2 || !side) {
+      continue;
+    }
+
+    const oppositeEndpoint = endpoint === "source" ? "target" : "source";
+    const sortedEdges = [...groupedEdges].sort((left, right) =>
+      compareCentersForSide(
+        side,
+        centerForEndpoint(left, oppositeEndpoint, positionById),
+        centerForEndpoint(right, oppositeEndpoint, positionById)
+      )
+    );
+
+    for (const [index, edge] of sortedEdges.entries()) {
+      const endpointOffset = offsetAlongSide(side, laneOffset(side, index, sortedEdges.length));
+      const oppositeSide = sideFromHandleId(edge[`${oppositeEndpoint}Handle`]);
+      const oppositeOffset = oppositeSide
+        ? offsetAlongSide(oppositeSide, laneOffset(oppositeSide, index, sortedEdges.length))
+        : undefined;
+      const previousOffsets = laneOffsetByEdgeId.get(edge.id);
+
+      laneOffsetByEdgeId.set(edge.id, {
+        ...previousOffsets,
+        [`${oppositeEndpoint}Offset`]:
+          previousOffsets?.[`${oppositeEndpoint}Offset`] ?? oppositeOffset,
+        [`${endpoint}Offset`]: endpointOffset,
+      });
+    }
+  }
+}
+
+function laneOffset(side: EdgeSide, index: number, laneCount: number) {
+  const borderLength = side === "left" || side === "right" ? NODE_HEIGHT : NODE_WIDTH;
+  const cornerClearance = side === "left" || side === "right" ? 12 : 16;
+  const maximumOffset = borderLength / 2 - cornerClearance;
+  const step = Math.min(
+    IMPACT_EDGE_LANE_OFFSET_STEP,
+    laneCount > 1 ? (maximumOffset * 2) / (laneCount - 1) : 0
+  );
+
+  return (index - (laneCount - 1) / 2) * step;
+}
+
+function compareCentersForSide(
+  side: EdgeSide,
   leftCenter: { x: number; y: number },
   rightCenter: { x: number; y: number }
 ) {
-  if (targetSide === "left" || targetSide === "right") {
+  if (side === "left" || side === "right") {
     return leftCenter.y - rightCenter.y || leftCenter.x - rightCenter.x;
   }
 
   return leftCenter.x - rightCenter.x || leftCenter.y - rightCenter.y;
 }
 
-function centerForEdgeSource(
+function centerForEndpoint(
   edge: ContextGraphModel["impactEdges"][number],
+  endpoint: EdgeEndpoint,
   positionById: Map<string, { x: number; y: number }>
 ) {
-  const sourcePosition = positionById.get(edge.source);
+  const position = positionById.get(edge[endpoint]);
 
-  return sourcePosition ? toNodeCenter(sourcePosition) : { x: 0, y: 0 };
+  return position ? toNodeCenter(position) : { x: 0, y: 0 };
 }
 
 function sideFromHandleId(handleIdValue?: string | null): EdgeSide | null {

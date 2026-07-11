@@ -1,9 +1,9 @@
 import { NODE_HEIGHT, NODE_WIDTH } from "./layoutConstants";
 import { assignContainsEdgeHandles, assignImpactEdgeHandles } from "./layoutHandles";
-import { distributeImpactEdgeTargets } from "./layoutImpactLanes";
+import { distributeImpactEdgeLanes } from "./layoutImpactLanes";
+import { optimizeImpactLayout } from "./optimizeImpactLayout";
 import type { ContextGraphModel, ContextGraphNode } from "./types";
 
-const FOLDER_HEADER_HEIGHT = 30;
 const FOLDER_PADDING = 14;
 const FILE_GAP = 12;
 const FOLDER_HORIZONTAL_GAP = 52;
@@ -59,14 +59,15 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
       continue;
     }
 
+    if (!node.data.hasDirectFiles) {
+      sizeById.set(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+      continue;
+    }
+
     const fileCount = filesByFolderId.get(node.id)?.length ?? 0;
     sizeById.set(node.id, {
       width: NODE_WIDTH + FOLDER_PADDING * 2,
-      height:
-        FOLDER_HEADER_HEIGHT +
-        FOLDER_PADDING +
-        fileCount * NODE_HEIGHT +
-        Math.max(0, fileCount - 1) * FILE_GAP,
+      height: FOLDER_PADDING * 2 + fileCount * NODE_HEIGHT + Math.max(0, fileCount - 1) * FILE_GAP,
     });
   }
 
@@ -93,7 +94,7 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
 
     positionedNodes.push(positionedNode(folder, x, folderY, size, 0));
 
-    let fileY = folderY + FOLDER_HEADER_HEIGHT;
+    let fileY = folderY + FOLDER_PADDING;
     for (const file of filesByFolderId.get(folder.id) ?? []) {
       const fileSize = sizeById.get(file.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
       positionedNodes.push(positionedNode(file, x + FOLDER_PADDING, fileY, fileSize, 10));
@@ -102,12 +103,14 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
 
     let childY = subtreeY;
     for (const childFolder of foldersByParentId.get(folder.id) ?? []) {
-      positionFolder(
-        updatedNodeById.get(childFolder.id) ?? childFolder,
-        x + size.width + FOLDER_HORIZONTAL_GAP,
-        childY
-      );
-      childY += (subtreeHeightById.get(childFolder.id) ?? NODE_HEIGHT) + FOLDER_VERTICAL_GAP;
+      const positionedChild = updatedNodeById.get(childFolder.id) ?? childFolder;
+      positionFolder(positionedChild, x + size.width + FOLDER_HORIZONTAL_GAP, childY);
+      const childSize = sizeById.get(childFolder.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+      const childHasFolders = (foldersByParentId.get(childFolder.id)?.length ?? 0) > 0;
+      const childLayoutHeight = childHasFolders
+        ? (subtreeHeightById.get(childFolder.id) ?? childSize.height)
+        : childSize.height;
+      childY += childLayoutHeight + FOLDER_VERTICAL_GAP;
     }
   };
 
@@ -115,7 +118,8 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
   for (const root of roots) {
     if (isFolder(root)) {
       positionFolder(root, 0, rootY);
-      rootY += (subtreeHeightById.get(root.id) ?? NODE_HEIGHT) + ROOT_GAP;
+      const rootSize = sizeById.get(root.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+      rootY += (subtreeHeightById.get(root.id) ?? rootSize.height) + ROOT_GAP;
       continue;
     }
 
@@ -124,14 +128,15 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
     rootY += size.height + ROOT_GAP;
   }
 
-  const positionById = new Map(positionedNodes.map((node) => [node.id, node.position]));
-  const fileNodes = positionedNodes.filter((node) => node.data.kind === "file");
+  const optimizedNodes = optimizeImpactLayout(positionedNodes, model.impactEdges, filesByFolderId);
+  const positionById = new Map(optimizedNodes.map((node) => [node.id, node.position]));
+  const fileNodes = optimizedNodes.filter((node) => node.data.kind === "file");
 
   return {
     ...model,
-    nodes: positionedNodes,
+    nodes: optimizedNodes,
     containsEdges: model.containsEdges.map(assignContainsEdgeHandles),
-    impactEdges: distributeImpactEdgeTargets(
+    impactEdges: distributeImpactEdgeLanes(
       model.impactEdges.map((edge) => assignImpactEdgeHandles(edge, positionById, fileNodes)),
       positionById
     ),

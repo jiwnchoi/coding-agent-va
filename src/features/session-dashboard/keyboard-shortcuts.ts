@@ -33,7 +33,8 @@ export function buildTabNumberShortcutActions(
 }
 
 export function buildShortcuts(
-  shortcutActions: Record<string, KeyboardShortcut["handler"]>
+  shortcutActions: Record<string, KeyboardShortcut["handler"]>,
+  shortcutOverrides: Record<string, string> = {}
 ): KeyboardShortcut[] {
   return APP_SHORTCUTS.flatMap((shortcut) => {
     const handler = shortcutActions[shortcut.action];
@@ -42,11 +43,21 @@ export function buildShortcuts(
       return [];
     }
 
-    return [
-      {
-        ...shortcut,
-        handler,
-      },
-    ];
+    const override = shortcutOverrides[shortcut.id];
+    return [{ ...shortcut, ...(override ? parseShortcut(override) : {}), handler }];
   });
+}
+
+function parseShortcut(
+  value: string
+): Pick<KeyboardShortcut, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey"> {
+  const parts = value.split("+");
+  const key = parts.pop() ?? "";
+  return {
+    key,
+    altKey: parts.includes("Alt"),
+    ctrlKey: parts.includes("Control"),
+    metaKey: parts.includes("Meta"),
+    shiftKey: parts.includes("Shift"),
+  };
 }

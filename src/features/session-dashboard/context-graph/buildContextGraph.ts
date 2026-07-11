@@ -16,6 +16,7 @@ import type {
 
 const CONTEXT_NODE_TYPE = "contextGraphNode" as const;
 const IMPACT_EDGE_COLOR = "#ff7f0e";
+const UNREAD_IMPACT_EDGE_COLOR = "#d62728";
 const IMPACT_EDGE_MARKER_SIZE = 8;
 
 export function buildContextGraph(options: ContextGraphBuildOptions): ContextGraphModel {
@@ -125,6 +126,8 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
       }
 
       const isHighlighted = selectedFilePath === changedFile || selectedFilePath === impactedFile;
+      const isRead = activityByPath.get(impactedFile)?.includes("read") ?? false;
+      const edgeColor = isRead ? IMPACT_EDGE_COLOR : UNREAD_IMPACT_EDGE_COLOR;
 
       const edgeId = `impact:${source}->${target}:${relation.importSpecifier}`;
 
@@ -133,14 +136,20 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
         source,
         target,
         animated: isHighlighted,
-        className: isHighlighted ? styles.highlightedImpactEdge : styles.impactEdge,
+        className: isHighlighted
+          ? isRead
+            ? styles.highlightedImpactEdge
+            : styles.highlightedUnreadImpactEdge
+          : isRead
+            ? styles.impactEdge
+            : styles.unreadImpactEdge,
         data: {
           kind: "impact",
           importSpecifier: relation.importSpecifier,
           isHighlighted,
         },
         markerEnd: {
-          color: IMPACT_EDGE_COLOR,
+          color: edgeColor,
           height: IMPACT_EDGE_MARKER_SIZE,
           strokeWidth: 1.5,
           type: "arrowclosed",

@@ -8,10 +8,45 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/shared/components/ui/dropdown-menu";
 import { Input } from "@/shared/components/ui/input";
+
+type SessionProvider = AgentSessionSummary["provider"];
+
+function ProviderLogo({ provider }: { provider: SessionProvider }) {
+  const label = provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "Pi";
+
+  return (
+    <span
+      aria-label={label}
+      title={label}
+      className="bg-muted text-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
+      {provider === "codex" ? (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4" fill="none">
+          <path
+            d="M12 3.3a4.35 4.35 0 0 1 7.75 2.6 4.35 4.35 0 0 1 1.55 7.95 4.35 4.35 0 0 1-6.2 5.35 4.35 4.35 0 0 1-7.75-2.6A4.35 4.35 0 0 1 5.8 8.65 4.35 4.35 0 0 1 12 3.3Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <path
+            d="m8.1 9.7 3.9-2.25 3.9 2.25v4.6L12 16.55 8.1 14.3V9.7Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+        </svg>
+      ) : provider === "claude" ? (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4" fill="currentColor">
+          <path d="M10.9 2h2.2l.45 6.25 3.5-5.2 1.8 1.25-2.75 5.65 5.9-2.1.7 2.1-5.65 2.95 5.65 2.95-.7 2.1-5.9-2.1 2.75 5.65-1.8 1.25-3.5-5.2L13.1 22h-2.2l-.45-6.25-3.5 5.2-1.8-1.25 2.75-5.65L2 16.15l-.7-2.1 5.65-2.95L1.3 8.15 2 6.05l5.9 2.1L5.15 2.5l1.8-1.25 3.5 5.2L10.9 2Z" />
+        </svg>
+      ) : (
+        <span aria-hidden="true" className="font-serif text-base leading-none font-semibold">
+          π
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function SessionPickerDropdown({
   nowMs,
@@ -68,22 +103,18 @@ export function SessionPickerDropdown({
               key={session.id}
               onSelect={() => onSelectSession(session.id)}
               className="border border-transparent">
-              <div className="flex min-w-0 flex-1 items-start gap-2">
+              <ProviderLogo provider={session.provider} />
+              <span className="min-w-0 flex-1 truncate">{session.title}</span>
+              <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
                 <span
                   className={
                     isActive
-                      ? "mt-1.5 size-2 shrink-0 rounded-full bg-green-500"
-                      : "mt-1.5 size-2 shrink-0 rounded-full bg-orange-500"
+                      ? "size-2 rounded-full bg-green-500"
+                      : "size-2 rounded-full bg-orange-500"
                   }
                 />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{session.title}</span>
-                  <span className="text-muted-foreground truncate text-xs">
-                    {session.providerLabel} · {session.cwd ?? session.transcriptPath}
-                  </span>
-                </div>
-              </div>
-              <DropdownMenuShortcut>{session.id.slice(0, 4)}</DropdownMenuShortcut>
+                {isActive ? "Active" : "Idle"}
+              </span>
             </DropdownMenuItem>
           );
         })}

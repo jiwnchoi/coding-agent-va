@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -25,8 +25,9 @@ use super::watch::{
 #[tauri::command]
 pub fn list_agent_sessions(
     state: State<'_, AgentSessionWatchState>,
+    runtime_homes: Option<BTreeMap<String, String>>,
 ) -> Result<AgentSessionList, String> {
-    let sources = default_runtime_sources();
+    let sources = default_runtime_sources(runtime_homes.as_ref());
     let mut sessions = Vec::new();
 
     for source in &sources {
@@ -63,12 +64,14 @@ pub fn get_agent_session_file_activity(
     provider: AgentSessionProvider,
     transcript_path: String,
     cwd: Option<String>,
+    hide_committed_files: bool,
 ) -> Result<AgentSessionFileActivity, String> {
     read_file_activity_cached(
         &state,
         provider,
         &PathBuf::from(transcript_path),
         cwd.as_deref(),
+        hide_committed_files,
     )
 }
 

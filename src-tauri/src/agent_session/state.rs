@@ -27,6 +27,7 @@ pub(crate) struct FileActivityCacheKey {
     pub(crate) provider: AgentSessionProvider,
     pub(crate) transcript_path: String,
     pub(crate) cwd: Option<String>,
+    pub(crate) hide_committed_files: bool,
 }
 
 #[derive(Clone)]

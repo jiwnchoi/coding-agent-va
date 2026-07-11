@@ -11,17 +11,22 @@
 }
 
 .node {
+  animation: node-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
   border-width: var(--context-graph-border-width);
   transition:
     border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+    box-shadow 160ms ease;
+}
+
+.motionDisabled .node,
+.motionDisabled .enteringContainsEdge,
+.motionDisabled .enteringImpactEdge {
+  animation: none;
 }
 
 .node:not(.directoryNode):hover {
   border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
   box-shadow: 0 1rem 2.5rem color-mix(in oklch, var(--foreground) 12%, transparent);
-  transform: translateY(-1px);
 }
 
 .directoryNode {
@@ -33,7 +38,10 @@
 }
 
 .filelessDirectoryNode {
-  border-color: transparent;
+  background: var(--card);
+  border-color: var(--border);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.5rem;
 }
 
 .directoryLabel {
@@ -57,8 +65,9 @@
   display: flex;
   inset: 0;
   justify-content: center;
+  line-height: 1rem;
   max-width: none;
-  padding: 0 0.625rem;
+  padding: 0 0.5rem;
   top: 0;
 }
 
@@ -70,8 +79,12 @@
   border-color: #d62728;
 }
 
-.impactedNode {
+.readImpactedNode {
   border-color: #ff7f0e;
+}
+
+.unreadImpactedNode {
+  border-color: #d62728;
 }
 
 .selectedNode {
@@ -91,6 +104,16 @@
   opacity: 0;
 }
 
+.enteringContainsEdge {
+  animation: contained-edge-enter 320ms ease-out both;
+}
+
+.enteringImpactEdge {
+  animation: edge-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
 .containsEdge :global(.react-flow__edge-path) {
   stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
   stroke-dasharray: 7 5;
@@ -99,7 +122,9 @@
 }
 
 .impactEdge,
-.highlightedImpactEdge {
+.highlightedImpactEdge,
+.unreadImpactEdge,
+.highlightedUnreadImpactEdge {
   z-index: 20;
 }
 
@@ -110,11 +135,23 @@
   stroke-width: var(--context-graph-border-width);
 }
 
-.impactEdge :global(.react-flow__edge-path) {
+.impactEdge :global(.react-flow__edge-path),
+.unreadImpactEdge :global(.react-flow__edge-path) {
   opacity: 0.78;
 }
 
 .highlightedImpactEdge :global(.react-flow__edge-path) {
+  opacity: 1;
+}
+
+.unreadImpactEdge :global(.react-flow__edge-path),
+.highlightedUnreadImpactEdge :global(.react-flow__edge-path) {
+  stroke: #d62728;
+  stroke-linecap: round;
+  stroke-width: var(--context-graph-border-width);
+}
+
+.highlightedUnreadImpactEdge :global(.react-flow__edge-path) {
   opacity: 1;
 }
 
@@ -125,4 +162,48 @@
 .error {
   background: color-mix(in oklch, var(--destructive) 14%, var(--card));
   border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
+}
+
+@keyframes node-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes edge-enter {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes contained-edge-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .enteringContainsEdge,
+  .enteringImpactEdge {
+    animation: none;
+  }
 }

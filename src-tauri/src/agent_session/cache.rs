@@ -50,8 +50,9 @@ pub(crate) fn read_file_activity_cached(
     provider: AgentSessionProvider,
     transcript_path: &Path,
     cwd: Option<&str>,
+    hide_committed_files: bool,
 ) -> Result<AgentSessionFileActivity, String> {
-    let key = file_activity_cache_key(provider, transcript_path, cwd);
+    let key = file_activity_cache_key(provider, transcript_path, cwd, hide_committed_files);
     let transcript_updated_at_ms = file_updated_at_ms(transcript_path);
     let git_index_updated_at_ms = cwd.and_then(read_git_index_updated_at_ms);
 
@@ -65,9 +66,10 @@ pub(crate) fn read_file_activity_cached(
         }
     }
 
-    let activity = provider
-        .protocol()
-        .read_file_activity(transcript_path, cwd)?;
+    let activity =
+        provider
+            .protocol()
+            .read_file_activity(transcript_path, cwd, hide_committed_files)?;
     if let Ok(mut cache) = state.file_activities.lock() {
         cache.insert(
             key,
@@ -155,10 +157,12 @@ fn file_activity_cache_key(
     provider: AgentSessionProvider,
     transcript_path: &Path,
     cwd: Option<&str>,
+    hide_committed_files: bool,
 ) -> FileActivityCacheKey {
     FileActivityCacheKey {
         provider,
         transcript_path: normalize_absolute_activity_path(transcript_path),
         cwd: cwd.map(|path| normalize_absolute_activity_path(Path::new(path))),
+        hide_committed_files,
     }
 }

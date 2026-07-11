@@ -1,5 +1,12 @@
 [
   {
+    "id": "toggle-settings",
+    "key": ",",
+    "metaKey": true,
+    "allowInEditable": true,
+    "action": "toggleSettings"
+  },
+  {
     "id": "select-session-tab-1",
     "key": "1",
     "metaKey": true,

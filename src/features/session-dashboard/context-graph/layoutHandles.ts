@@ -1,5 +1,4 @@
 import {
-  EDGE_COLLISION_PADDING,
   EDGE_COLLISION_PENALTY,
   EDGE_SIDES,
   type EdgeSide,
@@ -7,6 +6,7 @@ import {
   NODE_HEIGHT,
   NODE_WIDTH,
 } from "./layoutConstants";
+import { lineIntersectsNode, nodeCenter } from "./layoutGeometry";
 import type { ContextGraphModel, ContextGraphNode } from "./types";
 
 export function assignContainsEdgeHandles(edge: ContextGraphModel["containsEdges"][number]) {
@@ -86,10 +86,7 @@ function sidePoint(position: { x: number; y: number }, side: EdgeSide) {
 }
 
 export function toNodeCenter(position: { x: number; y: number }) {
-  return {
-    x: position.x + NODE_WIDTH / 2,
-    y: position.y + NODE_HEIGHT / 2,
-  };
+  return nodeCenter(position);
 }
 
 function countLineNodeCollisions(
@@ -111,70 +108,6 @@ function countLineNodeCollisions(
   }
 
   return collisionCount;
-}
-
-function lineIntersectsNode(
-  sourcePoint: { x: number; y: number },
-  targetPoint: { x: number; y: number },
-  nodePosition: { x: number; y: number }
-) {
-  const left = nodePosition.x - EDGE_COLLISION_PADDING;
-  const right = nodePosition.x + NODE_WIDTH + EDGE_COLLISION_PADDING;
-  const top = nodePosition.y - EDGE_COLLISION_PADDING;
-  const bottom = nodePosition.y + NODE_HEIGHT + EDGE_COLLISION_PADDING;
-
-  if (
-    Math.max(sourcePoint.x, targetPoint.x) < left ||
-    Math.min(sourcePoint.x, targetPoint.x) > right ||
-    Math.max(sourcePoint.y, targetPoint.y) < top ||
-    Math.min(sourcePoint.y, targetPoint.y) > bottom
-  ) {
-    return false;
-  }
-
-  return (
-    pointInRect(sourcePoint, left, right, top, bottom) ||
-    pointInRect(targetPoint, left, right, top, bottom) ||
-    segmentsIntersect(sourcePoint, targetPoint, { x: left, y: top }, { x: right, y: top }) ||
-    segmentsIntersect(sourcePoint, targetPoint, { x: right, y: top }, { x: right, y: bottom }) ||
-    segmentsIntersect(sourcePoint, targetPoint, { x: right, y: bottom }, { x: left, y: bottom }) ||
-    segmentsIntersect(sourcePoint, targetPoint, { x: left, y: bottom }, { x: left, y: top })
-  );
-}
-
-function pointInRect(
-  point: { x: number; y: number },
-  left: number,
-  right: number,
-  top: number,
-  bottom: number
-) {
-  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
-}
-
-function segmentsIntersect(
-  firstStart: { x: number; y: number },
-  firstEnd: { x: number; y: number },
-  secondStart: { x: number; y: number },
-  secondEnd: { x: number; y: number }
-) {
-  const firstDirection = orientation(firstStart, firstEnd, secondStart);
-  const secondDirection = orientation(firstStart, firstEnd, secondEnd);
-  const thirdDirection = orientation(secondStart, secondEnd, firstStart);
-  const fourthDirection = orientation(secondStart, secondEnd, firstEnd);
-
-  return firstDirection * secondDirection < 0 && thirdDirection * fourthDirection < 0;
-}
-
-function orientation(
-  firstPoint: { x: number; y: number },
-  secondPoint: { x: number; y: number },
-  thirdPoint: { x: number; y: number }
-) {
-  return (
-    (secondPoint.y - firstPoint.y) * (thirdPoint.x - secondPoint.x) -
-    (secondPoint.x - firstPoint.x) * (thirdPoint.y - secondPoint.y)
-  );
 }
 
 function sideDirectionPenalty(
