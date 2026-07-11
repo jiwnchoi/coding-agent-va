@@ -5,11 +5,10 @@ import {
   Position,
   ReactFlow,
   type NodeProps,
-  useEdgesState,
-  useNodesState,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { FileCode2, FolderTree, SearchCode } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import styles from "@/features/session-dashboard/context-graph/ContextGraphView.module.css";
 import type {
@@ -35,6 +34,7 @@ const edgeTypes = {
 const FIT_VIEW_OPTIONS = {
   padding: 0.08,
 } as const;
+const EMPTY_PINNED_FILE_PATHS: string[] = [];
 const handlePositions = [
   ["top", Position.Top],
   ["right", Position.Right],
@@ -59,19 +59,55 @@ export function SessionContextGraphView({
   const { contextGraph, errorMessage, isLoading } = useSessionContextGraph({
     fileActivity,
     includeEntireWorkspace: false,
-    pinnedFilePaths: [],
+    pinnedFilePaths: EMPTY_PINNED_FILE_PATHS,
     selectedFilePath,
     selectedSession,
   });
-  const [nodes, setNodes, onNodesChange] = useNodesState<ContextGraphNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
-    contextGraph ? [...contextGraph.containsEdges, ...contextGraph.impactEdges] : []
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<
+    ContextGraphNode,
+    ContextGraphEdge
+  > | null>(null);
+  const nodes = contextGraph.nodes;
+  const edges = useMemo(
+    () => [...contextGraph.containsEdges, ...contextGraph.impactEdges],
+    [contextGraph]
   );
 
   useEffect(() => {
-    setNodes(contextGraph?.nodes ?? []);
-    setEdges(contextGraph ? [...contextGraph.containsEdges, ...contextGraph.impactEdges] : []);
-  }, [contextGraph, setEdges, setNodes]);
+    if (!reactFlowInstance || nodes.length === 0) {
+      return;
+    }
+
+    const currentReactFlowInstance = reactFlowInstance;
+    let animationFrameId: number | null = null;
+
+    function fitGraph() {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      animationFrameId = requestAnimationFrame(() => {
+        void currentReactFlowInstance.fitView(FIT_VIEW_OPTIONS);
+        animationFrameId = null;
+      });
+    }
+
+    function handleVisibilityChange() {
+      if (!document.hidden) {
+        fitGraph();
+      }
+    }
+
+    fitGraph();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [nodes, reactFlowInstance]);
 
   function handleNodeClick(node: ContextGraphNode) {
     if (node.data.kind !== "file") {
@@ -100,15 +136,14 @@ export function SessionContextGraphView({
             nodeTypes={nodeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
-            elementsSelectable
+            elementsSelectable={false}
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
             minZoom={0.2}
             maxZoom={1.8}
             zoomOnDoubleClick={false}
             proOptions={{ hideAttribution: true }}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            onInit={setReactFlowInstance}
             onNodeClick={(_event, node) => handleNodeClick(node as ContextGraphNode)}
           />
         ) : (
