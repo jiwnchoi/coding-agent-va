@@ -10,7 +10,7 @@ use crate::agent_session::activity::ActivityAccumulator;
 use crate::agent_session::file_system::{
     directory_title, file_updated_at_ms, is_jsonl_file_name, list_jsonl_files,
 };
-use crate::agent_session::time::payload_timestamp_ms;
+use crate::agent_session::time::entry_timestamp_ms;
 use crate::agent_session::titles::{
     extract_codex_session_id, read_codex_first_user_prompt_title, read_codex_session_meta_cwd,
     read_codex_session_titles,
@@ -127,20 +127,33 @@ impl AgentSessionProtocol for CodexSessionProtocol {
         let mut activity = ActivityAccumulator::default();
 
         for line in BufReader::new(file).lines().map_while(Result::ok) {
-            let Ok(envelope) = serde_json::from_str::<CodexRolloutEnvelope>(&line) else {
+            let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue;
             };
-            let timestamp_ms = payload_timestamp_ms(&envelope.payload);
+            let timestamp_ms = entry_timestamp_ms(&entry);
+            let Ok(envelope) = serde_json::from_value::<CodexRolloutEnvelope>(entry) else {
+                continue;
+            };
 
             match envelope.entry_type.as_str() {
-                "response_item" => collect_codex_read_files(
-                    &envelope.payload,
-                    workspace_root.as_deref(),
-                    timestamp_ms,
-                    &mut activity.read_files,
-                ),
+                "response_item" => {
+                    collect_codex_read_files(
+                        &envelope.payload,
+                        workspace_root.as_deref(),
+                        timestamp_ms,
+                        &mut activity.read_files,
+                    );
+                    collect_codex_written_files(
+                        &envelope.payload,
+                        workspace_root.as_deref(),
+                        timestamp_ms,
+                        &mut activity.edited_files,
+                        &mut activity.deleted_files,
+                    );
+                }
                 "event_msg" => collect_codex_written_files(
                     &envelope.payload,
+                    workspace_root.as_deref(),
                     timestamp_ms,
                     &mut activity.edited_files,
                     &mut activity.deleted_files,
