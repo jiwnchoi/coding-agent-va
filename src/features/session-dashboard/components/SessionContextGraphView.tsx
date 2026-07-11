@@ -198,6 +198,7 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
         styles.node,
         "text-card-foreground border-border relative h-full w-full border",
         data.kind === "directory" && styles.directoryNode,
+        data.kind === "directory" && !data.hasDirectFiles && styles.filelessDirectoryNode,
         isFile && "bg-card rounded-md px-2 py-1.5",
         isFile && primaryActivityClass(data.activities),
         isFile && data.isSelected && styles.selectedNode
@@ -231,7 +232,13 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
           <p className="min-w-0 flex-1 truncate text-xs leading-4 font-medium">{data.label}</p>
         </div>
       ) : (
-        <p className={styles.directoryLabel}>{data.label}</p>
+        <p
+          className={cn(
+            styles.directoryLabel,
+            !data.hasDirectFiles && styles.filelessDirectoryLabel
+          )}>
+          {data.label}
+        </p>
       )}
     </div>
   );

@@ -27,6 +27,7 @@ export type ContextGraphNodeData = {
   isSelected: boolean;
   isPinned: boolean;
   childActivityCount: number;
+  hasDirectFiles: boolean;
   language: string;
 };
 

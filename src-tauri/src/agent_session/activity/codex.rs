@@ -64,45 +64,57 @@ pub(crate) fn collect_codex_read_files(
         return;
     }
 
-    let Some(exec_arguments) = extract_exec_command_arguments(payload) else {
-        return;
-    };
-    let command_root = exec_arguments
-        .workdir
-        .as_deref()
-        .map(PathBuf::from)
-        .or_else(|| workspace_root.map(Path::to_path_buf));
+    for exec_arguments in extract_exec_command_arguments(payload) {
+        let command_root = exec_arguments
+            .workdir
+            .as_deref()
+            .map(PathBuf::from)
+            .or_else(|| workspace_root.map(Path::to_path_buf));
 
-    collect_shell_read_files(
-        &exec_arguments.cmd,
-        command_root.as_deref(),
-        timestamp_ms,
-        read_files,
-    );
+        collect_shell_read_files(
+            &exec_arguments.cmd,
+            command_root.as_deref(),
+            timestamp_ms,
+            read_files,
+        );
+    }
 }
 
-fn extract_exec_command_arguments(
-    payload: &serde_json::Value,
-) -> Option<CodexExecCommandArguments> {
+fn extract_exec_command_arguments(payload: &serde_json::Value) -> Vec<CodexExecCommandArguments> {
     match (json_str(payload, &["type"]), json_str(payload, &["name"])) {
         (Some("function_call"), Some("exec_command" | "shell" | "shell_command")) => {
             json_str(payload, &["arguments"])
                 .and_then(|arguments| serde_json::from_str(arguments).ok())
+                .into_iter()
+                .collect()
         }
-        (Some("custom_tool_call"), Some("exec")) => {
-            json_str(payload, &["input"]).and_then(custom_exec_command_arguments)
-        }
-        _ => None,
+        (Some("custom_tool_call"), Some("exec")) => json_str(payload, &["input"])
+            .map(custom_exec_command_arguments)
+            .unwrap_or_default(),
+        _ => Vec::new(),
     }
 }
 
-fn custom_exec_command_arguments(input: &str) -> Option<CodexExecCommandArguments> {
-    let command_call_start = input.find("tools.exec_command(")?;
-    let input_after_command_call = &input[command_call_start..];
-    let arguments_start = input_after_command_call.find('{')?;
-    let arguments = json_object_at(&input_after_command_call[arguments_start..])?;
+fn custom_exec_command_arguments(input: &str) -> Vec<CodexExecCommandArguments> {
+    let mut arguments = Vec::new();
+    let mut remaining = input;
 
-    serde_json::from_str(arguments).ok()
+    while let Some(command_call_start) = remaining.find("tools.exec_command(") {
+        let input_after_command_call = &remaining[command_call_start..];
+        let Some(arguments_start) = input_after_command_call.find('{') else {
+            break;
+        };
+        let arguments_input = &input_after_command_call[arguments_start..];
+        let Some(arguments_json) = json_object_at(arguments_input) else {
+            break;
+        };
+        if let Ok(command_arguments) = serde_json::from_str(arguments_json) {
+            arguments.push(command_arguments);
+        }
+        remaining = &arguments_input[arguments_json.len()..];
+    }
+
+    arguments
 }
 
 fn json_object_at(input: &str) -> Option<&str> {
@@ -193,26 +205,25 @@ pub(crate) fn collect_codex_written_files(
         }
     }
 
-    let Some(exec_arguments) = extract_exec_command_arguments(payload) else {
-        return;
-    };
-    let command_root = exec_arguments
-        .workdir
-        .as_deref()
-        .map(PathBuf::from)
-        .or_else(|| workspace_root.map(Path::to_path_buf));
-    collect_shell_edited_files(
-        &exec_arguments.cmd,
-        command_root.as_deref(),
-        timestamp_ms,
-        edited_files,
-    );
-    collect_shell_deleted_files(
-        &exec_arguments.cmd,
-        command_root.as_deref(),
-        timestamp_ms,
-        deleted_files,
-    );
+    for exec_arguments in extract_exec_command_arguments(payload) {
+        let command_root = exec_arguments
+            .workdir
+            .as_deref()
+            .map(PathBuf::from)
+            .or_else(|| workspace_root.map(Path::to_path_buf));
+        collect_shell_edited_files(
+            &exec_arguments.cmd,
+            command_root.as_deref(),
+            timestamp_ms,
+            edited_files,
+        );
+        collect_shell_deleted_files(
+            &exec_arguments.cmd,
+            command_root.as_deref(),
+            timestamp_ms,
+            deleted_files,
+        );
+    }
 }
 
 fn custom_exec_apply_patch(input: &str) -> Option<String> {
@@ -279,7 +290,10 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_WORKSPACE_ID: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn collects_reads_from_custom_exec_tool_calls() {
@@ -306,6 +320,34 @@ mod tests {
         collect_codex_read_files(&payload, Some(&workspace), 1, &mut read_files);
 
         assert!(read_files.contains_key(&normalize_absolute_activity_path(&file_path)));
+        fs::remove_dir_all(workspace).expect("cleanup workspace");
+    }
+
+    #[test]
+    fn collects_reads_from_every_parallel_custom_exec_command() {
+        let workspace = test_workspace();
+        let first_file = workspace.join("first.ts");
+        let second_file = workspace.join("second.ts");
+        let third_file = workspace.join("third.json");
+        for file_path in [&first_file, &second_file, &third_file] {
+            fs::write(file_path, "content").expect("write target");
+        }
+        let payload = serde_json::json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": format!(
+                "const results = await Promise.all([\n  tools.exec_command({{\"cmd\":\"sed -n '1,20p' first.ts\",\"workdir\":\"{}\"}}),\n  tools.exec_command({{\"cmd\":\"sed -n '1,20p' second.ts && sed -n '1,20p' third.json\",\"workdir\":\"{}\"}})\n]);",
+                workspace.display(),
+                workspace.display()
+            ),
+        });
+        let mut read_files = HashMap::new();
+
+        collect_codex_read_files(&payload, Some(&workspace), 1, &mut read_files);
+
+        for file_path in [first_file, second_file, third_file] {
+            assert!(read_files.contains_key(&normalize_absolute_activity_path(&file_path)));
+        }
         fs::remove_dir_all(workspace).expect("cleanup workspace");
     }
 
@@ -387,7 +429,9 @@ mod tests {
 
     fn test_workspace() -> PathBuf {
         let workspace = std::env::temp_dir().join(format!(
-            "coding-agent-va-codex-test-{}",
+            "coding-agent-va-codex-test-{}-{}-{}",
+            std::process::id(),
+            TEST_WORKSPACE_ID.fetch_add(1, Ordering::Relaxed),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("current time")

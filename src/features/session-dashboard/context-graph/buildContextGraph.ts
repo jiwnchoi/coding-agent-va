@@ -3,11 +3,7 @@ import type { ActivitySectionKey } from "@/features/session-dashboard/lib/sessio
 import { buildActivityByPath, buildChildActivityCounts } from "./contextGraphActivity";
 import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
 import styles from "./ContextGraphView.module.css";
-import {
-  collectVisibleNodeIds,
-  expandHiddenRootChildren,
-  isVisibleGraphNode,
-} from "./contextGraphVisibility";
+import { collectVisibleNodeIds, isVisibleGraphNode } from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
   ArchitectureNode,
@@ -67,7 +63,15 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     fileNodeIdByPathKey,
     includeEntireWorkspace: options.includeEntireWorkspace,
   });
-  expandHiddenRootChildren(architectureGraph, visibleNodeIds);
+
+  const directoriesWithVisibleFiles = new Set(
+    architectureGraph.edges
+      .filter((edge) => edge.kind === "contains")
+      .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+      .filter((edge) => nodeById.get(edge.source)?.kind === "directory")
+      .filter((edge) => nodeById.get(edge.target)?.kind === "file")
+      .map((edge) => edge.source)
+  );
 
   const childActivityCountByNodeId = buildChildActivityCounts(
     architectureGraph,
@@ -84,6 +88,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
       toContextGraphNode({
         activities: activityByPath.get(displayPathForNode(node, workspacePath)) ?? [],
         childActivityCount: childActivityCountByNodeId.get(node.id) ?? 0,
+        hasDirectFiles: directoriesWithVisibleFiles.has(node.id),
         isPinned: pinnedFilePaths.includes(displayPathForNode(node, workspacePath)),
         isSelected: selectedFilePath === displayPathForNode(node, workspacePath),
         node,
@@ -102,7 +107,11 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     })
     .map(toContainsEdge);
 
-  const collapsedHierarchy = collapseSingleDirectoryChains(nodes, containsEdges);
+  const visibleHierarchy = pruneEmptyDirectories(nodes, containsEdges);
+  const collapsedHierarchy = collapseSingleDirectoryChains(
+    visibleHierarchy.nodes,
+    visibleHierarchy.edges
+  );
 
   const impactEdges = options.fileActivity.impactedRelations
     .map((relation): ContextGraphEdge | null => {
@@ -155,9 +164,50 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   };
 }
 
+function pruneEmptyDirectories(
+  nodes: ContextGraphNode[],
+  edges: ContextGraphEdge[]
+): { nodes: ContextGraphNode[]; edges: ContextGraphEdge[] } {
+  const retainedNodeIds = new Set(
+    nodes.filter((node) => node.data.kind !== "directory").map((node) => node.id)
+  );
+  const parentIdsByChildId = new Map<string, string[]>();
+
+  for (const edge of edges) {
+    parentIdsByChildId.set(edge.target, [
+      ...(parentIdsByChildId.get(edge.target) ?? []),
+      edge.source,
+    ]);
+  }
+
+  const pendingNodeIds = [...retainedNodeIds];
+  while (pendingNodeIds.length > 0) {
+    const childId = pendingNodeIds.pop();
+    if (!childId) {
+      continue;
+    }
+
+    for (const parentId of parentIdsByChildId.get(childId) ?? []) {
+      if (retainedNodeIds.has(parentId)) {
+        continue;
+      }
+      retainedNodeIds.add(parentId);
+      pendingNodeIds.push(parentId);
+    }
+  }
+
+  return {
+    nodes: nodes.filter((node) => retainedNodeIds.has(node.id)),
+    edges: edges.filter(
+      (edge) => retainedNodeIds.has(edge.source) && retainedNodeIds.has(edge.target)
+    ),
+  };
+}
+
 function toContextGraphNode({
   activities,
   childActivityCount,
+  hasDirectFiles,
   isPinned,
   isSelected,
   node,
@@ -165,6 +215,7 @@ function toContextGraphNode({
 }: {
   activities: ActivitySectionKey[];
   childActivityCount: number;
+  hasDirectFiles: boolean;
   isPinned: boolean;
   isSelected: boolean;
   node: ArchitectureNode;
@@ -181,6 +232,7 @@ function toContextGraphNode({
       displayPath: displayPathForNode(node, workspacePath),
       isPinned,
       isSelected,
+      hasDirectFiles,
       kind: node.kind as ContextGraphNodeData["kind"],
       label: node.label,
       language: node.metadata?.language ?? "",

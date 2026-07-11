@@ -39,8 +39,21 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
     children.sort(compareNodes);
   }
 
+  const nodes = model.nodes.map((node) =>
+    node.data.kind === "directory"
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            hasDirectFiles: (filesByFolderId.get(node.id)?.length ?? 0) > 0,
+          },
+        }
+      : node
+  );
+  const updatedNodeById = new Map(nodes.map((node) => [node.id, node]));
+
   const sizeById = new Map<string, NodeSize>();
-  for (const node of model.nodes) {
+  for (const node of nodes) {
     if (node.data.kind === "file") {
       sizeById.set(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
       continue;
@@ -69,7 +82,7 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
     return subtreeHeight;
   };
 
-  const roots = model.nodes.filter((node) => !childIds.has(node.id)).sort(compareNodes);
+  const roots = nodes.filter((node) => !childIds.has(node.id)).sort(compareNodes);
   roots.filter(isFolder).forEach(measureSubtree);
 
   const positionedNodes: ContextGraphNode[] = [];
@@ -89,7 +102,11 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
 
     let childY = subtreeY;
     for (const childFolder of foldersByParentId.get(folder.id) ?? []) {
-      positionFolder(childFolder, x + size.width + FOLDER_HORIZONTAL_GAP, childY);
+      positionFolder(
+        updatedNodeById.get(childFolder.id) ?? childFolder,
+        x + size.width + FOLDER_HORIZONTAL_GAP,
+        childY
+      );
       childY += (subtreeHeightById.get(childFolder.id) ?? NODE_HEIGHT) + FOLDER_VERTICAL_GAP;
     }
   };
