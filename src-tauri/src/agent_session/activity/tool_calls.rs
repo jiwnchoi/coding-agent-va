@@ -2,7 +2,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use super::shell::{collect_shell_deleted_files, collect_shell_read_files, insert_activity_path};
+use super::shell::{
+    collect_shell_deleted_files, collect_shell_edited_files, collect_shell_read_files,
+    insert_activity_path,
+};
 use super::ActivityAccumulator;
 use crate::agent_session::json::json_str;
 use crate::agent_session::time::entry_timestamp_ms;
@@ -106,6 +109,12 @@ fn collect_tool_call_activity(
                     command_root.as_deref(),
                     timestamp_ms,
                     &mut activity.read_files,
+                );
+                collect_shell_edited_files(
+                    command,
+                    command_root.as_deref(),
+                    timestamp_ms,
+                    &mut activity.edited_files,
                 );
                 collect_shell_deleted_files(
                     command,

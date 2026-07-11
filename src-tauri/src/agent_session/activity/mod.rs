@@ -73,7 +73,12 @@ pub(crate) fn filter_written_files_by_git_status(
     edited_files: &mut HashMap<String, u64>,
     deleted_files: &mut HashMap<String, u64>,
 ) {
-    let Some(git_status) = cwd.and_then(read_git_worktree_status) else {
+    let candidate_paths = edited_files
+        .keys()
+        .chain(deleted_files.keys())
+        .filter_map(|path| normalize_written_activity_path(path, cwd))
+        .collect::<HashSet<_>>();
+    let Some(git_status) = read_git_worktree_status(&candidate_paths) else {
         return;
     };
 

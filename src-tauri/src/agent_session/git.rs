@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -13,24 +13,62 @@ pub(crate) struct GitWorktreeStatus {
     pub(crate) deleted_files: HashSet<String>,
 }
 
-pub(crate) fn read_git_worktree_status(cwd: &str) -> Option<GitWorktreeStatus> {
-    let repo_root = resolve_git_repo_root_from_path(Path::new(cwd))?;
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&repo_root)
-        .arg("status")
-        .arg("--porcelain=v1")
-        .arg("-z")
-        .arg("--untracked-files=all")
-        .output()
-        .ok()?;
+pub(crate) fn read_git_worktree_status(
+    candidate_paths: &HashSet<String>,
+) -> Option<GitWorktreeStatus> {
+    if candidate_paths.is_empty() {
+        return Some(GitWorktreeStatus::default());
+    }
 
-    if !output.status.success() {
+    let mut relative_paths_by_repo_root = BTreeMap::<PathBuf, BTreeSet<PathBuf>>::new();
+    for candidate_path in candidate_paths {
+        let candidate_path = Path::new(candidate_path);
+        let Some(repo_root) = resolve_git_repo_root_for_activity_path(candidate_path) else {
+            continue;
+        };
+        let Ok(relative_path) = candidate_path.strip_prefix(&repo_root) else {
+            continue;
+        };
+
+        relative_paths_by_repo_root
+            .entry(repo_root)
+            .or_default()
+            .insert(relative_path.to_path_buf());
+    }
+    if relative_paths_by_repo_root.is_empty() {
         return None;
     }
 
     let mut status = GitWorktreeStatus::default();
-    let mut entries = output.stdout.split(|byte| *byte == 0);
+    for (repo_root, relative_paths) in relative_paths_by_repo_root {
+        let output = read_git_status_for_paths(&repo_root, relative_paths)?;
+        append_git_status_entries(&mut status, &repo_root, &output.stdout);
+    }
+
+    Some(status)
+}
+
+fn read_git_status_for_paths(
+    repo_root: &Path,
+    relative_paths: BTreeSet<PathBuf>,
+) -> Option<std::process::Output> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(repo_root)
+        .arg("status")
+        .arg("--porcelain=v1")
+        .arg("-z")
+        .arg("--untracked-files=all")
+        .arg("--");
+    command.args(relative_paths);
+    let output = command.output().ok()?;
+
+    output.status.success().then_some(output)
+}
+
+fn append_git_status_entries(status: &mut GitWorktreeStatus, repo_root: &Path, stdout: &[u8]) {
+    let mut entries = stdout.split(|byte| *byte == 0);
     while let Some(entry) = entries.next() {
         if entry.len() < 4 {
             continue;
@@ -54,8 +92,6 @@ pub(crate) fn read_git_worktree_status(cwd: &str) -> Option<GitWorktreeStatus> {
             status.edited_files.insert(absolute_path);
         }
     }
-
-    Some(status)
 }
 
 pub(crate) fn read_agent_session_file_diff(
@@ -169,6 +205,19 @@ fn resolve_git_repo_root(file_path: &Path, cwd: Option<&str>) -> Option<PathBuf>
     }
     .or_else(|| cwd.map(PathBuf::from))?;
     resolve_git_repo_root_from_path(&search_root)
+}
+
+fn resolve_git_repo_root_for_activity_path(activity_path: &Path) -> Option<PathBuf> {
+    let search_start = if activity_path.is_dir() {
+        activity_path
+    } else {
+        activity_path.parent()?
+    };
+
+    search_start
+        .ancestors()
+        .filter(|ancestor| ancestor.exists())
+        .find_map(resolve_git_repo_root_from_path)
 }
 
 fn resolve_git_repo_root_from_path(search_root: &Path) -> Option<PathBuf> {
