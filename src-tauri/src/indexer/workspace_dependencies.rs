@@ -50,6 +50,14 @@ struct ChangedSymbols {
     usages: BTreeSet<String>,
 }
 
+#[derive(Debug)]
+struct ImportAlias {
+    pattern_prefix: String,
+    pattern_suffix: String,
+    target_prefix: PathBuf,
+    target_suffix: String,
+}
+
 #[cfg(test)]
 pub fn find_impacted_file_relations(
     workspace_root: &Path,
@@ -83,6 +91,7 @@ pub fn find_session_impacted_file_relations(
         .collect::<HashSet<_>>();
     let mut known_files = collect_known_files(&workspace_root)?;
     known_files.extend(changed_files.iter().cloned());
+    let import_aliases = load_import_aliases(&workspace_root);
 
     let mut importers_by_dependency = HashMap::<PathBuf, Vec<ImporterRelation>>::new();
 
@@ -108,6 +117,7 @@ pub fn find_session_impacted_file_relations(
                 language,
                 &workspace_root,
                 &known_files,
+                &import_aliases,
             ) {
                 importers_by_dependency
                     .entry(resolved)
@@ -316,6 +326,7 @@ fn resolve_internal_import(
     language: SupportedLanguage,
     workspace_root: &Path,
     known_files: &HashSet<PathBuf>,
+    import_aliases: &[ImportAlias],
 ) -> Vec<PathBuf> {
     if specifier.is_empty() {
         return Vec::new();
@@ -325,15 +336,15 @@ fn resolve_internal_import(
         return resolve_rust_import(importer, specifier, workspace_root, known_files);
     }
 
-    if is_external_specifier(specifier) {
-        return Vec::new();
-    }
-
     let base_directory = importer.parent().unwrap_or(workspace_root);
     let base_path = if specifier.starts_with('/') {
         workspace_root.join(specifier.trim_start_matches('/'))
-    } else {
+    } else if specifier.starts_with('.') {
         base_directory.join(specifier)
+    } else if let Some(path) = resolve_import_alias(specifier, import_aliases) {
+        path
+    } else {
+        return Vec::new();
     };
 
     candidate_paths(&base_path, language)
@@ -343,6 +354,66 @@ fn resolve_internal_import(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn load_import_aliases(workspace_root: &Path) -> Vec<ImportAlias> {
+    ["tsconfig.json", "jsconfig.json"]
+        .into_iter()
+        .filter_map(|name| fs::read_to_string(workspace_root.join(name)).ok())
+        .filter_map(|source| serde_json::from_str::<serde_json::Value>(&source).ok())
+        .flat_map(|config| {
+            let compiler_options = config.get("compilerOptions").cloned().unwrap_or_default();
+            let base_url = compiler_options
+                .get("baseUrl")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(".");
+            let base_path = workspace_root.join(base_url);
+            compiler_options
+                .get("paths")
+                .and_then(serde_json::Value::as_object)
+                .into_iter()
+                .flat_map(move |paths| {
+                    let base_path = base_path.clone();
+                    paths.iter().flat_map(move |(pattern, targets)| {
+                        let base_path = base_path.clone();
+                        targets
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(move |target| import_alias(pattern, target, &base_path))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn import_alias(pattern: &str, target: &str, base_path: &Path) -> ImportAlias {
+    let (pattern_prefix, pattern_suffix) = split_alias_pattern(pattern);
+    let (target_prefix, target_suffix) = split_alias_pattern(target);
+    ImportAlias {
+        pattern_prefix: pattern_prefix.to_string(),
+        pattern_suffix: pattern_suffix.to_string(),
+        target_prefix: base_path.join(target_prefix),
+        target_suffix: target_suffix.to_string(),
+    }
+}
+
+fn split_alias_pattern(pattern: &str) -> (&str, &str) {
+    pattern.split_once('*').unwrap_or((pattern, ""))
+}
+
+fn resolve_import_alias(specifier: &str, aliases: &[ImportAlias]) -> Option<PathBuf> {
+    aliases.iter().find_map(|alias| {
+        let remainder = specifier.strip_prefix(&alias.pattern_prefix)?;
+        let wildcard = remainder.strip_suffix(&alias.pattern_suffix)?;
+        Some(
+            alias
+                .target_prefix
+                .join(format!("{wildcard}{}", alias.target_suffix)),
+        )
+    })
 }
 
 fn resolve_rust_import(
@@ -450,10 +521,6 @@ fn index_file_names(language: SupportedLanguage) -> Vec<String> {
         .iter()
         .map(|extension| format!("index.{extension}"))
         .collect()
-}
-
-fn is_external_specifier(specifier: &str) -> bool {
-    !(specifier.starts_with('.') || specifier.starts_with('/'))
 }
 
 fn normalize_path(path: &Path, workspace_root: &Path) -> PathBuf {

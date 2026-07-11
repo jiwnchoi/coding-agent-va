@@ -11,17 +11,7 @@
 }
 
 .node {
-  animation: node-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
   border-width: var(--context-graph-border-width);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.motionDisabled .node,
-.motionDisabled .enteringContainsEdge,
-.motionDisabled .enteringImpactEdge {
-  animation: none;
 }
 
 .node:not(.directoryNode):hover {
@@ -104,16 +94,6 @@
   opacity: 0;
 }
 
-.enteringContainsEdge {
-  animation: contained-edge-enter 320ms ease-out both;
-}
-
-.enteringImpactEdge {
-  animation: edge-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-}
-
 .containsEdge :global(.react-flow__edge-path) {
   stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
   stroke-dasharray: 7 5;
@@ -162,48 +142,4 @@
 .error {
   background: color-mix(in oklch, var(--destructive) 14%, var(--card));
   border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
-}
-
-@keyframes node-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes edge-enter {
-  from {
-    opacity: 0;
-    stroke-dashoffset: 1;
-  }
-
-  24% {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 1;
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes contained-edge-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .node,
-  .enteringContainsEdge,
-  .enteringImpactEdge {
-    animation: none;
-  }
 }

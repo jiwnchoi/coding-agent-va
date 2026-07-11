@@ -16,7 +16,6 @@ import type {
   ContextGraphNode,
   ContextGraphNodeData,
 } from "@/features/session-dashboard/context-graph/types";
-import { useAnimatedContextGraphNodes } from "@/features/session-dashboard/context-graph/useAnimatedContextGraphNodes";
 import { useSessionContextGraph } from "@/features/session-dashboard/context-graph/useSessionContextGraph";
 import {
   type ActivitySectionKey,
@@ -36,7 +35,6 @@ const edgeTypes = {
 const FIT_VIEW_OPTIONS = {
   padding: 0.08,
 } as const;
-const FIT_VIEW_ANIMATION_DURATION = 420;
 const EMPTY_PINNED_FILE_PATHS: string[] = [];
 const handlePositions = [
   ["top", Position.Top],
@@ -70,9 +68,7 @@ export function SessionContextGraphView({
     ContextGraphNode,
     ContextGraphEdge
   > | null>(null);
-  const sessionId = selectedSession?.id ?? "";
   const nodes = contextGraph.nodes;
-  const { isGraphSwitch, nodes: animatedNodes } = useAnimatedContextGraphNodes(nodes, sessionId);
   const edges = useMemo(() => {
     const nodeById = new Map(contextGraph.nodes.map((node) => [node.id, node]));
     const folderEdges = contextGraph.containsEdges.filter(
@@ -98,13 +94,7 @@ export function SessionContextGraphView({
       }
 
       animationFrameId = requestAnimationFrame(() => {
-        void currentReactFlowInstance.fitView({
-          ...FIT_VIEW_OPTIONS,
-          duration:
-            isGraphSwitch || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-              ? 0
-              : FIT_VIEW_ANIMATION_DURATION,
-        });
+        void currentReactFlowInstance.fitView({ ...FIT_VIEW_OPTIONS, duration: 0 });
         animationFrameId = null;
       });
     }
@@ -124,7 +114,7 @@ export function SessionContextGraphView({
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isGraphSwitch, nodes, reactFlowInstance]);
+  }, [nodes, reactFlowInstance]);
 
   function handleNodeClick(node: ContextGraphNode) {
     if (node.data.kind !== "file") {
@@ -142,13 +132,12 @@ export function SessionContextGraphView({
       <div
         className={cn(
           styles.shell,
-          isGraphSwitch && styles.motionDisabled,
           "relative h-full min-h-0 w-full overflow-hidden bg-transparent"
         )}>
         {selectedSession?.cwd ? (
           <ReactFlow
             className="h-full w-full"
-            nodes={animatedNodes}
+            nodes={nodes}
             edges={edges}
             edgeTypes={edgeTypes}
             nodeTypes={nodeTypes}
@@ -270,7 +259,7 @@ function ContextGraphContainsEdgeComponent({
     `L ${targetX},${targetY}`,
   ].join(" ");
 
-  return <BaseEdge className={styles.enteringContainsEdge} path={edgePath} markerEnd={markerEnd} />;
+  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
 }
 
 function ContextGraphImpactEdgeComponent({
@@ -304,14 +293,7 @@ function ContextGraphImpactEdgeComponent({
     `${targetPoint.x},${targetPoint.y}`,
   ].join(" ");
 
-  return (
-    <BaseEdge
-      className={styles.enteringImpactEdge}
-      path={edgePath}
-      markerEnd={markerEnd}
-      pathLength={1}
-    />
-  );
+  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
 }
 
 function controlPointForPosition(

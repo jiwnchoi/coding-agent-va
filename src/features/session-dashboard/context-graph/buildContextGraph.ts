@@ -135,7 +135,6 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
         id: edgeId,
         source,
         target,
-        animated: isHighlighted,
         className: isHighlighted
           ? isRead
             ? styles.highlightedImpactEdge

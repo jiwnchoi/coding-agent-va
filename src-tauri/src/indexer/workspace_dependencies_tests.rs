@@ -146,6 +146,54 @@ fn limits_method_changes_to_files_calling_that_method() {
 }
 
 #[test]
+fn resolves_path_aliases_through_barrels_to_jsx_consumers() {
+    let workspace_root = create_temp_workspace("path-alias");
+    let src_dir = workspace_root.join("src");
+    let feature_dir = src_dir.join("features/dashboard");
+    let components_dir = feature_dir.join("components");
+    fs::create_dir_all(&components_dir).expect("create component dirs");
+    fs::write(
+        workspace_root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}"#,
+    )
+    .expect("write tsconfig");
+    fs::write(
+        components_dir.join("ChangedView.tsx"),
+        "export function ChangedView() { return <div>changed</div>; }\n",
+    )
+    .expect("write changed component");
+    fs::write(
+        components_dir.join("index.ts"),
+        "export { ChangedView } from './ChangedView';\n",
+    )
+    .expect("write component barrel");
+    fs::write(
+        feature_dir.join("index.ts"),
+        "export { ChangedView } from './components';\n",
+    )
+    .expect("write feature barrel");
+    fs::write(
+        src_dir.join("App.tsx"),
+        "import { ChangedView } from '@/features/dashboard';\nexport function App() { return <ChangedView />; }\n",
+    )
+    .expect("write JSX consumer");
+
+    let relations = find_session_impacted_file_relations(
+        &workspace_root,
+        &[SessionFileEdit {
+            path: components_dir.join("ChangedView.tsx"),
+            fragments: vec!["<div>changed</div>".to_string()],
+        }],
+    )
+    .expect("index aliased JSX consumer");
+
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].impacted_file, "src/App.tsx");
+    assert_eq!(relations[0].import_specifier, "@/features/dashboard");
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
+#[test]
 fn finds_importers_of_deleted_file_when_path_is_missing() {
     let workspace_root = create_temp_workspace("deleted");
     let src_dir = workspace_root.join("src");
