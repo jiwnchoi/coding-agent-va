@@ -102,7 +102,11 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     })
     .map(toContainsEdge);
 
-  const collapsedHierarchy = collapseSingleDirectoryChains(nodes, containsEdges);
+  const visibleHierarchy = pruneEmptyDirectories(nodes, containsEdges);
+  const collapsedHierarchy = collapseSingleDirectoryChains(
+    visibleHierarchy.nodes,
+    visibleHierarchy.edges
+  );
 
   const impactEdges = options.fileActivity.impactedRelations
     .map((relation): ContextGraphEdge | null => {
@@ -152,6 +156,46 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     impactEdges: impactEdges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
     activity: options.fileActivity,
     impactedRelations: options.fileActivity.impactedRelations,
+  };
+}
+
+function pruneEmptyDirectories(
+  nodes: ContextGraphNode[],
+  edges: ContextGraphEdge[]
+): { nodes: ContextGraphNode[]; edges: ContextGraphEdge[] } {
+  const retainedNodeIds = new Set(
+    nodes.filter((node) => node.data.kind !== "directory").map((node) => node.id)
+  );
+  const parentIdsByChildId = new Map<string, string[]>();
+
+  for (const edge of edges) {
+    parentIdsByChildId.set(edge.target, [
+      ...(parentIdsByChildId.get(edge.target) ?? []),
+      edge.source,
+    ]);
+  }
+
+  const pendingNodeIds = [...retainedNodeIds];
+  while (pendingNodeIds.length > 0) {
+    const childId = pendingNodeIds.pop();
+    if (!childId) {
+      continue;
+    }
+
+    for (const parentId of parentIdsByChildId.get(childId) ?? []) {
+      if (retainedNodeIds.has(parentId)) {
+        continue;
+      }
+      retainedNodeIds.add(parentId);
+      pendingNodeIds.push(parentId);
+    }
+  }
+
+  return {
+    nodes: nodes.filter((node) => retainedNodeIds.has(node.id)),
+    edges: edges.filter(
+      (edge) => retainedNodeIds.has(edge.source) && retainedNodeIds.has(edge.target)
+    ),
   };
 }
 
