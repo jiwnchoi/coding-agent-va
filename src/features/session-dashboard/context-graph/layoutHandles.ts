@@ -9,7 +9,7 @@ import {
 } from "./layoutConstants";
 import type { ContextGraphModel, ContextGraphNode } from "./types";
 
-export function assignClosestEdgeHandles(edge: ContextGraphModel["containsEdges"][number]) {
+export function assignContainsEdgeHandles(edge: ContextGraphModel["containsEdges"][number]) {
   return {
     ...edge,
     sourceHandle: handleId(HANDLE_PREFIXES.source, "right"),

@@ -11,27 +11,41 @@
 }
 
 .node {
-  background: color-mix(in oklch, var(--card) 94%, transparent);
   border-width: var(--context-graph-border-width);
-  box-shadow: 0 0.75rem 2rem color-mix(in oklch, var(--foreground) 8%, transparent);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
 }
 
-.node:hover {
+.node:not(.directoryNode):hover {
   border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
   box-shadow: 0 1rem 2.5rem color-mix(in oklch, var(--foreground) 12%, transparent);
   transform: translateY(-1px);
 }
 
-.repoNode {
-  background: color-mix(in oklch, var(--foreground) 7%, var(--card));
+.directoryNode {
+  background: transparent;
+  border-color: color-mix(in oklch, var(--foreground) 22%, var(--border));
+  border-radius: 0.625rem;
+  box-shadow: none;
+  pointer-events: none;
 }
 
-.directoryNode {
-  background: color-mix(in oklch, var(--muted) 38%, var(--card));
+.directoryLabel {
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  left: 0.625rem;
+  line-height: 1rem;
+  max-width: calc(100% - 1.25rem);
+  overflow: hidden;
+  padding: 0 0.25rem;
+  position: absolute;
+  text-overflow: ellipsis;
+  top: -0.5625rem;
+  white-space: nowrap;
 }
 
 .editedNode {
