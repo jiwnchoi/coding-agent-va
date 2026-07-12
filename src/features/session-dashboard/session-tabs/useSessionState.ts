@@ -114,12 +114,17 @@ export function useSessionState() {
       const currentSelectedSessionId = shouldInitializeSessionTabs
         ? ""
         : selectedSessionIdRef.current;
+      const knownSessionIds = new Set(sessionsRef.current.map((session) => session.id));
+      const sessionIdsToOpen = shouldInitializeSessionTabs
+        ? []
+        : nextSessions
+            .filter((session) => !knownSessionIds.has(session.id))
+            .map((session) => session.id);
       const { nextOpenSessionIds, nextSelectedSessionId } = reconcileTabState({
         currentDismissedSessionIds: dismissedSessionIdsRef.current,
         currentOpenSessionIds,
         currentSelectedSessionId,
-        openUntrackedSessions: !shouldInitializeSessionTabs,
-        sessions: nextSessions,
+        sessionIdsToOpen,
       });
 
       const nextSessionIds = new Set(nextSessions.map((session) => session.id));
