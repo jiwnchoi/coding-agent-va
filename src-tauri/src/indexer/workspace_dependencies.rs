@@ -1,7 +1,7 @@
 use super::import_extractor::{extract_code_identifiers, extract_imports};
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
-use super::symbol_extractor::extract_declarations;
+use super::symbol_extractor::{extract_declarations, extract_symbols};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -236,7 +236,108 @@ fn changed_symbols(path: &Path, fragments: &[String]) -> Option<ChangedSymbols> 
         usages.insert(usage.name.clone());
         exported.insert(exported_symbol.name.clone());
     }
+    if let Some(boundaries) = promote_private_top_level_changes(
+        language,
+        &source,
+        &symbols,
+        &extract_symbols(language, &source, tree.root_node()),
+        &usages,
+    ) {
+        exported = boundaries.clone();
+        usages = boundaries;
+    }
     (!exported.is_empty()).then_some(ChangedSymbols { exported, usages })
+}
+
+fn promote_private_top_level_changes(
+    language: SupportedLanguage,
+    source: &str,
+    declarations: &[super::symbol_extractor::ExtractedSymbol],
+    top_level: &[super::symbol_extractor::ExtractedSymbol],
+    changed_usages: &BTreeSet<String>,
+) -> Option<BTreeSet<String>> {
+    let changed_top_level = top_level
+        .iter()
+        .filter(|symbol| changed_usages.contains(&symbol.name))
+        .collect::<Vec<_>>();
+    if changed_top_level.is_empty()
+        || changed_top_level
+            .iter()
+            .any(|symbol| is_public_declaration(language, source, symbol))
+    {
+        return None;
+    }
+
+    let mut pending = changed_top_level
+        .into_iter()
+        .map(|symbol| symbol.name.clone())
+        .collect::<VecDeque<_>>();
+    let mut visited = HashSet::new();
+    let mut boundaries = BTreeSet::new();
+    while let Some(changed_name) = pending.pop_front() {
+        if !visited.insert(changed_name.clone()) {
+            continue;
+        }
+        for caller in top_level {
+            if caller.name == changed_name || !declaration_references(source, caller, &changed_name)
+            {
+                continue;
+            }
+            if is_public_declaration(language, source, caller) {
+                boundaries.insert(caller.name.clone());
+            } else {
+                pending.push_back(caller.name.clone());
+            }
+        }
+    }
+
+    let declaration_names = declarations
+        .iter()
+        .map(|declaration| declaration.name.as_str())
+        .collect::<HashSet<_>>();
+    boundaries.retain(|boundary| declaration_names.contains(boundary.as_str()));
+    Some(boundaries)
+}
+
+fn declaration_references(
+    source: &str,
+    declaration: &super::symbol_extractor::ExtractedSymbol,
+    name: &str,
+) -> bool {
+    source
+        .get(declaration.start_byte..declaration.end_byte)
+        .is_some_and(|text| identifier_words(text).any(|word| word == name))
+}
+
+fn identifier_words(source: &str) -> impl Iterator<Item = &str> {
+    source
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .filter(|word| !word.is_empty())
+}
+
+fn is_public_declaration(
+    language: SupportedLanguage,
+    source: &str,
+    declaration: &super::symbol_extractor::ExtractedSymbol,
+) -> bool {
+    let line_start = source[..declaration.start_byte]
+        .rfind('\n')
+        .map_or(0, |index| index + 1);
+    let prefix = &source[line_start..declaration.start_byte];
+    match language {
+        SupportedLanguage::JavaScript
+        | SupportedLanguage::Jsx
+        | SupportedLanguage::TypeScript
+        | SupportedLanguage::Tsx => {
+            identifier_words(prefix).any(|word| word == "export")
+                || source.lines().any(|line| {
+                    line.trim_start().starts_with("export {")
+                        && identifier_words(line).any(|word| word == declaration.name)
+                })
+        }
+        SupportedLanguage::Rust => identifier_words(prefix).any(|word| word == "pub"),
+        _ => true,
+    }
 }
 
 fn is_callable_declaration(kind: &str) -> bool {

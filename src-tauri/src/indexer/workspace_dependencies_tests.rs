@@ -194,6 +194,53 @@ fn resolves_path_aliases_through_barrels_to_jsx_consumers() {
 }
 
 #[test]
+fn promotes_changed_private_components_to_their_public_file_boundary() {
+    let workspace_root = create_temp_workspace("private-component");
+    let src_dir = workspace_root.join("src");
+    let feature_dir = src_dir.join("features/dashboard");
+    let components_dir = feature_dir.join("components");
+    fs::create_dir_all(&components_dir).expect("create component dirs");
+    fs::write(
+        workspace_root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}"#,
+    )
+    .expect("write tsconfig");
+    fs::write(
+        components_dir.join("Picker.tsx"),
+        "function ProviderLogo() { return <img alt='changed' />; }\nexport function Picker() { return <ProviderLogo />; }\n",
+    )
+    .expect("write component with private child");
+    fs::write(
+        components_dir.join("index.ts"),
+        "export { Picker } from './Picker';\n",
+    )
+    .expect("write component barrel");
+    fs::write(
+        feature_dir.join("index.ts"),
+        "export { Picker } from './components';\n",
+    )
+    .expect("write feature barrel");
+    fs::write(
+        src_dir.join("App.tsx"),
+        "import { Picker } from '@/features/dashboard';\nexport function App() { return <Picker />; }\n",
+    )
+    .expect("write app consumer");
+
+    let relations = find_session_impacted_file_relations(
+        &workspace_root,
+        &[SessionFileEdit {
+            path: components_dir.join("Picker.tsx"),
+            fragments: vec!["alt='changed'".to_string()],
+        }],
+    )
+    .expect("index private component change");
+
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].impacted_file, "src/App.tsx");
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
+#[test]
 fn finds_importers_of_deleted_file_when_path_is_missing() {
     let workspace_root = create_temp_workspace("deleted");
     let src_dir = workspace_root.join("src");
