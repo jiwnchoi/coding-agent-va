@@ -48,6 +48,7 @@ function App() {
     sessionHistoryIdsRef,
     selectSession,
     handleCloseSession,
+    markSessionAsViewed,
     markSelectedSessionAsViewed,
     reconcileSessions,
   } = useSessionState();
@@ -76,7 +77,7 @@ function App() {
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     if (document.hasFocus()) {
-      window.setTimeout(markSelectedSessionAsViewed, 0);
+      markSessionAsViewed(sessionId);
     }
     setSearchQuery("");
     setSelectedActivityFile(null);
@@ -146,15 +147,39 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
-    const unlistenPromise = getCurrentWindow().listen("tauri://focus", (event) => {
-      if (!disposed && event.payload === true) {
+    const handleWindowFocus = () => {
+      if (!disposed) {
         markSelectedSessionAsViewed();
+      }
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    const currentWindow = getCurrentWindow();
+    let unlistenFocusChanged: (() => void) | undefined;
+    const unlistenPromise = currentWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) {
+        handleWindowFocus();
+      }
+    });
+
+    void unlistenPromise.then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unlistenFocusChanged = unlisten;
+    });
+    void currentWindow.isFocused().then((focused) => {
+      if (focused) {
+        handleWindowFocus();
       }
     });
 
     return () => {
       disposed = true;
-      void unlistenPromise.then((unlisten) => unlisten());
+      window.removeEventListener("focus", handleWindowFocus);
+      unlistenFocusChanged?.();
     };
   }, [markSelectedSessionAsViewed]);
 

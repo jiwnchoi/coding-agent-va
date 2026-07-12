@@ -89,20 +89,22 @@ export function useSessionState() {
     [setSelectedSessionWithHistory]
   );
 
-  const markSelectedSessionAsViewed = useCallback(() => {
-    const selectedSession = sessionsRef.current.find(
-      (session) => session.id === selectedSessionIdRef.current
-    );
+  const markSessionAsViewed = useCallback((sessionId: string) => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
 
-    if (!selectedSession) {
+    if (!session) {
       return;
     }
 
     setViewedSessionUpdatedAtMs((currentViewed) => ({
       ...currentViewed,
-      [selectedSession.id]: selectedSession.updatedAtMs,
+      [session.id]: session.updatedAtMs,
     }));
   }, []);
+
+  const markSelectedSessionAsViewed = useCallback(() => {
+    markSessionAsViewed(selectedSessionIdRef.current);
+  }, [markSessionAsViewed]);
 
   const reconcileSessions = useCallback(
     (nextSessions: AgentSessionSummary[]) => {
@@ -174,6 +176,7 @@ export function useSessionState() {
     viewedSessionUpdatedAtMs,
     selectSession,
     handleCloseSession,
+    markSessionAsViewed,
     markSelectedSessionAsViewed,
     reconcileSessions,
   };
