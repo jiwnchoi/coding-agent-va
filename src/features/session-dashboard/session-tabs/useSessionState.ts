@@ -10,7 +10,9 @@ export function useSessionState() {
   const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [sessionHistoryIds, setSessionHistoryIds] = useState<string[]>([]);
-  const activeSessionIdsRef = useRef<string[]>([]);
+  const [viewedSessionUpdatedAtMs, setViewedSessionUpdatedAtMs] = useState<Record<string, number>>(
+    {}
+  );
   const dismissedSessionIdsRef = useRef(dismissedSessionIds);
   const sessionsRef = useRef(sessions);
   const openSessionIdsRef = useRef(openSessionIds);
@@ -73,8 +75,8 @@ export function useSessionState() {
 
       setOpenSessionIds(nextOpenSessionIds);
       setSelectedSessionWithHistory(nextSelectedSessionId);
-      setSessionHistoryIds((currentHistorySessionIds) =>
-        currentHistorySessionIds.filter((historySessionId) => historySessionId !== sessionId)
+      setSessionHistoryIds((currentSessionHistoryIds) =>
+        currentSessionHistoryIds.filter((historySessionId) => historySessionId !== sessionId)
       );
       setDismissedSessionIds((currentDismissedSessionIds) =>
         currentDismissedSessionIds.includes(sessionId)
@@ -85,34 +87,62 @@ export function useSessionState() {
     [setSelectedSessionWithHistory]
   );
 
+  const markSelectedSessionAsViewed = useCallback(() => {
+    const selectedSession = sessionsRef.current.find(
+      (session) => session.id === selectedSessionIdRef.current
+    );
+
+    if (!selectedSession) {
+      return;
+    }
+
+    setViewedSessionUpdatedAtMs((currentViewed) => ({
+      ...currentViewed,
+      [selectedSession.id]: selectedSession.updatedAtMs,
+    }));
+  }, []);
+
   const reconcileSessions = useCallback(
-    (nextSessions: AgentSessionSummary[], currentNowMs: number) => {
-      const {
-        activeSessionIds,
-        nextDismissedSessionIds,
-        nextOpenSessionIds,
-        nextSelectedSessionId,
-      } = reconcileTabState({
+    (nextSessions: AgentSessionSummary[]) => {
+      const { nextOpenSessionIds, nextSelectedSessionId } = reconcileTabState({
         currentDismissedSessionIds: dismissedSessionIdsRef.current,
         currentOpenSessionIds: openSessionIdsRef.current,
         currentSelectedSessionId: selectedSessionIdRef.current,
-        nowMs: currentNowMs,
-        previousActiveSessionIds: activeSessionIdsRef.current,
         sessions: nextSessions,
       });
 
-      setSessions(nextSessions);
-      setDismissedSessionIds(nextDismissedSessionIds);
+      const nextSessionIds = new Set(nextSessions.map((session) => session.id));
+      const retainedOpenSessions = sessionsRef.current.filter(
+        (session) => !nextSessionIds.has(session.id) && nextOpenSessionIds.includes(session.id)
+      );
+
+      setSessions([...nextSessions, ...retainedOpenSessions]);
+      setViewedSessionUpdatedAtMs((currentViewed) => {
+        const nextViewed = Object.fromEntries(
+          Object.entries(currentViewed).filter(
+            ([sessionId]) =>
+              nextSessions.some((session) => session.id === sessionId) ||
+              nextOpenSessionIds.includes(sessionId)
+          )
+        );
+        const initialSession = nextSessions.find((session) => session.id === nextSelectedSessionId);
+
+        if (!selectedSessionIdRef.current && initialSession) {
+          nextViewed[initialSession.id] = initialSession.updatedAtMs;
+        }
+
+        return nextViewed;
+      });
       setOpenSessionIds(nextOpenSessionIds);
       setSessionHistoryIds((currentHistorySessionIds) =>
         currentHistorySessionIds.filter(
           (sessionId) =>
-            nextOpenSessionIds.includes(sessionId) &&
-            nextSessions.some((session) => session.id === sessionId)
+            (nextOpenSessionIds.includes(sessionId) &&
+              nextSessions.some((session) => session.id === sessionId)) ||
+            retainedOpenSessions.some((session) => session.id === sessionId)
         )
       );
       setSelectedSessionWithHistory(nextSelectedSessionId);
-      activeSessionIdsRef.current = activeSessionIds;
     },
     [setSelectedSessionWithHistory]
   );
@@ -125,8 +155,10 @@ export function useSessionState() {
     openSessionIdsRef,
     selectedSessionIdRef,
     sessionHistoryIdsRef,
+    viewedSessionUpdatedAtMs,
     selectSession,
     handleCloseSession,
+    markSelectedSessionAsViewed,
     reconcileSessions,
   };
 }

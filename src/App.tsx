@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -7,7 +8,7 @@ import {
   buildTabNumberShortcutActions,
   handleTitlebarMouseDown,
   rotateSession,
-  selectMostRecentlyActiveSession,
+  selectMostRecentlyUsedSession,
   SessionContextGraphView,
   SessionFileViewer,
   SessionPickerDropdown,
@@ -38,6 +39,7 @@ function App() {
   const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
   const {
     sessions,
+    viewedSessionUpdatedAtMs,
     openSessionIds,
     selectedSessionId,
     sessionsRef,
@@ -46,11 +48,11 @@ function App() {
     sessionHistoryIdsRef,
     selectSession,
     handleCloseSession,
+    markSelectedSessionAsViewed,
     reconcileSessions,
   } = useSessionState();
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
   const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
     null
@@ -73,6 +75,9 @@ function App() {
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
+    if (document.hasFocus()) {
+      window.setTimeout(markSelectedSessionAsViewed, 0);
+    }
     setSearchQuery("");
     setSelectedActivityFile(null);
     clearSelectedFileDiffState();
@@ -95,9 +100,9 @@ function App() {
         rotateSession(openSessionIdsRef.current, selectedSessionIdRef.current, -1)
       );
     },
-    selectMostRecentlyActiveSessionTab: () => {
+    selectMostRecentlyUsedSessionTab: () => {
       handleSelectSession(
-        selectMostRecentlyActiveSession(
+        selectMostRecentlyUsedSession(
           sessionHistoryIdsRef.current,
           openSessionIdsRef.current,
           selectedSessionIdRef.current
@@ -107,11 +112,9 @@ function App() {
     closeSelectedSessionTab: () => {
       const selectedSessionId = selectedSessionIdRef.current;
 
-      if (!selectedSessionId) {
-        return;
+      if (selectedSessionId) {
+        handleCloseSession(selectedSessionId);
       }
-
-      handleCloseSession(selectedSessionId);
     },
     toggleSettings: () => setIsSettingsOpen((isOpen) => !isOpen),
   };
@@ -130,7 +133,7 @@ function App() {
       }
 
       setRuntimeSources(result.sources);
-      reconcileSessions(result.sessions, Date.now());
+      reconcileSessions(result.sessions);
       setIsLoading(false);
     }
 
@@ -142,24 +145,26 @@ function App() {
   }, [reconcileSessions, settings.runtimeHomes]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      const currentNowMs = Date.now();
-
-      setNowMs(currentNowMs);
-      reconcileSessions(sessionsRef.current, currentNowMs);
-    }, 15_000);
+    let disposed = false;
+    const unlistenPromise = getCurrentWindow().listen("tauri://focus", (event) => {
+      if (!disposed && event.payload === true) {
+        markSelectedSessionAsViewed();
+      }
+    });
 
     return () => {
-      window.clearInterval(intervalId);
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [reconcileSessions, sessionsRef]);
+  }, [markSelectedSessionAsViewed]);
 
   useAgentSessionWatchRefresh(
     watchRegistrations,
     reconcileSessions,
     sessionsRef,
     selectedSessionIdRef,
-    setFileActivityRefreshVersion
+    setFileActivityRefreshVersion,
+    settings.runtimeHomes
   );
 
   useKeyboardShortcuts(shortcuts);
@@ -184,18 +189,18 @@ function App() {
             <>
               <div className="shrink-0">
                 <SessionPickerDropdown
-                  nowMs={nowMs}
                   searchQuery={searchQuery}
                   sessions={sessions}
+                  viewedSessionUpdatedAtMs={viewedSessionUpdatedAtMs}
                   setSearchQuery={setSearchQuery}
                   onSelectSession={handleSelectSession}
                 />
               </div>
               <div className="min-w-0 flex-1">
                 <SessionTabBar
-                  nowMs={nowMs}
                   openSessions={openSessions}
                   selectedSessionId={selectedSessionId}
+                  viewedSessionUpdatedAtMs={viewedSessionUpdatedAtMs}
                   onCloseSession={handleCloseSession}
                   onSelectSession={handleSelectSession}
                 />

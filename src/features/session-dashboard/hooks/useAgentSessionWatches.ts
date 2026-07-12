@@ -17,7 +17,7 @@ type CurrentRef<T> = {
   current: T;
 };
 
-type ReconcileSessions = (nextSessions: AgentSessionSummary[], currentNowMs: number) => void;
+type ReconcileSessions = (nextSessions: AgentSessionSummary[]) => void;
 
 type SetFileActivityRefreshVersion = (update: (currentVersion: number) => number) => void;
 
@@ -83,7 +83,8 @@ export function useAgentSessionWatchRefresh(
   reconcileSessions: ReconcileSessions,
   sessionsRef: CurrentRef<AgentSessionSummary[]>,
   selectedSessionIdRef: CurrentRef<string>,
-  setFileActivityRefreshVersion: SetFileActivityRefreshVersion
+  setFileActivityRefreshVersion: SetFileActivityRefreshVersion,
+  runtimeHomes: Record<string, string>
 ) {
   useEffect(() => {
     if (watchRegistrations.length === 0) {
@@ -128,12 +129,12 @@ export function useAgentSessionWatchRefresh(
 
       try {
         if (shouldRefreshSessions) {
-          const result = await invoke<AgentSessionList>("list_agent_sessions");
+          const result = await invoke<AgentSessionList>("list_agent_sessions", { runtimeHomes });
           if (disposed) {
             return;
           }
 
-          reconcileSessions(result.sessions, Date.now());
+          reconcileSessions(result.sessions);
         }
 
         if (!disposed && shouldRefreshFileActivity) {
@@ -166,11 +167,10 @@ export function useAgentSessionWatchRefresh(
       }
 
       pendingSessionsRefresh ||= !isGitIndexOnlyChange(changedPaths, gitIndexPaths);
-      pendingFileActivityRefresh ||= selectedSessionNeedsFileActivityRefresh(
-        changedPaths,
-        gitIndexPaths,
+      pendingFileActivityRefresh ||= selectedSessionBelongsToProvider(
         sessionsRef.current,
-        selectedSessionIdRef.current
+        selectedSessionIdRef.current,
+        payload.provider
       );
 
       scheduleRefresh();
@@ -188,6 +188,7 @@ export function useAgentSessionWatchRefresh(
     selectedSessionIdRef,
     sessionsRef,
     setFileActivityRefreshVersion,
+    runtimeHomes,
     watchRegistrations,
   ]);
 }
@@ -216,27 +217,12 @@ function isGitIndexOnlyChange(changedPaths: Set<string>, gitIndexPaths: Set<stri
   return true;
 }
 
-function selectedSessionNeedsFileActivityRefresh(
-  changedPaths: Set<string>,
-  gitIndexPaths: Set<string>,
+function selectedSessionBelongsToProvider(
   sessions: AgentSessionSummary[],
-  selectedSessionId: string
+  selectedSessionId: string,
+  provider: AgentRuntimeSource["provider"]
 ) {
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
 
-  if (!selectedSession) {
-    return false;
-  }
-
-  if (changedPaths.has(normalizeWatchPath(selectedSession.transcriptPath))) {
-    return true;
-  }
-
-  for (const path of changedPaths) {
-    if (gitIndexPaths.has(path)) {
-      return true;
-    }
-  }
-
-  return false;
+  return selectedSession?.provider === provider;
 }

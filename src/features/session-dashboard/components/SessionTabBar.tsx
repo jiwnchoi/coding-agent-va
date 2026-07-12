@@ -1,19 +1,19 @@
 import { X } from "lucide-react";
 
-import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
+import { isSessionChecked } from "@/features/session-dashboard/session-tabs/session-tab-utils";
 import { cn } from "@/shared/lib/utils";
 
 export function SessionTabBar({
-  nowMs,
   openSessions,
   selectedSessionId,
+  viewedSessionUpdatedAtMs,
   onCloseSession,
   onSelectSession,
 }: {
-  nowMs: number;
   openSessions: AgentSessionSummary[];
   selectedSessionId: string;
+  viewedSessionUpdatedAtMs: Record<string, number>;
   onCloseSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 }) {
@@ -22,7 +22,7 @@ export function SessionTabBar({
       <div className="flex min-w-0 flex-1 [scrollbar-width:none] items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {openSessions.map((session) => {
           const isSelected = session.id === selectedSessionId;
-          const isActive = nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
+          const isChecked = isSessionChecked(session, viewedSessionUpdatedAtMs);
 
           return (
             <button
@@ -36,7 +36,7 @@ export function SessionTabBar({
               <span
                 className={cn(
                   "size-2 shrink-0 rounded-full bg-orange-500",
-                  isActive && "bg-green-500"
+                  !isChecked && "bg-green-500"
                 )}
               />
               <span className="max-w-52 min-w-0 truncate text-sm font-medium">{session.title}</span>

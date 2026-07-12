@@ -1,6 +1,6 @@
 export {
   rotateSession,
-  selectMostRecentlyActiveSession,
+  selectMostRecentlyUsedSession,
   selectSessionByTabNumber,
 } from "./session-tab-utils";
 export { useSessionState } from "./useSessionState";

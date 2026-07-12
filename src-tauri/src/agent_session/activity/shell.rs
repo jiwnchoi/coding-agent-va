@@ -129,6 +129,7 @@ fn shell_file_operands(command: &str, edited: bool) -> Vec<String> {
         return Vec::new();
     }
 
+    let in_place = tokens_contain_in_place_option(&first_shell_command_tokens(command));
     let mut operands = Vec::new();
     let mut after_options = false;
     for token in tokens.into_iter().skip(1) {
@@ -152,21 +153,29 @@ fn shell_file_operands(command: &str, edited: bool) -> Vec<String> {
         }
         // sed -i edits its file operands; without -i sed only reads them.
         // The option may be `-i`, `-i.bak`, or grouped with other flags.
-        if tokens_contain_in_place_option(command) {
+        if in_place {
             operands
         } else {
             Vec::new()
         }
-    } else if tokens_contain_in_place_option(command) {
+    } else if in_place {
         Vec::new()
     } else {
         operands
     }
 }
 
-fn tokens_contain_in_place_option(command: &str) -> bool {
-    shell_like_tokens(command)
-        .into_iter()
+fn first_shell_command_tokens(command: &str) -> Vec<String> {
+    command
+        .split([';', '|', '&'])
+        .next()
+        .map(shell_like_tokens)
+        .unwrap_or_default()
+}
+
+fn tokens_contain_in_place_option(tokens: &[String]) -> bool {
+    tokens
+        .iter()
         .skip(1)
         .any(|token| token == "-i" || token.starts_with("-i"))
 }
@@ -241,6 +250,24 @@ mod tests {
 
         assert!(read_files.contains_key(&normalize_absolute_activity_path(&input)));
         assert!(edited_files.contains_key(&normalize_absolute_activity_path(&input)));
+        fs::remove_dir_all(workspace).expect("remove workspace");
+    }
+
+    #[test]
+    fn sed_read_is_not_marked_as_edit_when_a_later_command_uses_i() {
+        let workspace = test_workspace();
+        let input = workspace.join("input.txt");
+        fs::write(&input, "input").expect("write input");
+        let mut edited_files = HashMap::new();
+
+        collect_shell_edited_files(
+            "sed -n '1,2p' input.txt && rg -n -i input input.txt",
+            Some(&workspace),
+            1,
+            &mut edited_files,
+        );
+
+        assert!(edited_files.is_empty());
         fs::remove_dir_all(workspace).expect("remove workspace");
     }
 

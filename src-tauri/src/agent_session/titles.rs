@@ -162,6 +162,10 @@ pub(crate) fn normalize_title_whitespace(text: impl AsRef<str>) -> String {
         .join(" ")
 }
 
+pub(crate) fn normalize_title(text: impl AsRef<str>) -> String {
+    truncate_title(&normalize_title_whitespace(text), SESSION_TITLE_MAX_CHARS)
+}
+
 fn read_message_first_user_prompt_title(path: &Path, schema: MessageSchema) -> Option<String> {
     let file = File::open(path).ok()?;
 
@@ -286,4 +290,16 @@ fn is_metadata_prompt(text: &str) -> bool {
 
     let first_token = text.split_whitespace().next().unwrap_or_default();
     first_token.starts_with('<') && first_token.ends_with('>')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_title;
+
+    #[test]
+    fn normalize_title_removes_newlines_before_truncating() {
+        let title = format!("{}\n{}", "a".repeat(119), "b".repeat(10));
+
+        assert_eq!(normalize_title(title), format!("{}…", "a".repeat(119)));
+    }
 }

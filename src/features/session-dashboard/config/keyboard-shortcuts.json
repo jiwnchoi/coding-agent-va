@@ -86,9 +86,9 @@
     "action": "closeSelectedSessionTab"
   },
   {
-    "id": "most-recently-active-session-tab",
+    "id": "most-recently-used-session-tab",
     "key": "Enter",
     "metaKey": true,
-    "action": "selectMostRecentlyActiveSessionTab"
+    "action": "selectMostRecentlyUsedSessionTab"
   }
 ]

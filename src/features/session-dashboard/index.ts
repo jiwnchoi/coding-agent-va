@@ -10,5 +10,5 @@ export {
   useAgentSessionWatchRefresh,
   useAgentSessionWatches,
 } from "./hooks/useAgentSessionWatches";
-export { rotateSession, selectMostRecentlyActiveSession, useSessionState } from "./session-tabs";
+export { rotateSession, selectMostRecentlyUsedSession, useSessionState } from "./session-tabs";
 export { handleTitlebarMouseDown } from "./window-titlebar";

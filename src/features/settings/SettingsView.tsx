@@ -1,5 +1,4 @@
 import {
-  Check,
   ChevronLeft,
   FolderCog,
   Keyboard,
@@ -145,27 +144,27 @@ export function SettingsView({
   );
 }
 
-function SettingCard({
-  children,
+function SettingRow({
+  control,
   description,
   title,
 }: {
-  children: React.ReactNode;
+  control: React.ReactNode;
   description: string;
   title: string;
 }) {
   return (
-    <section className="border-border bg-card overflow-hidden rounded-xl border shadow-sm">
-      <div className="border-border border-b px-6 py-5">
+    <div className="border-border flex min-h-20 items-center justify-between gap-8 border-b py-4 last:border-b-0">
+      <div className="min-w-0">
         <h2 className="text-sm font-medium">{title}</h2>
         <p className="text-muted-foreground mt-1 text-sm leading-5">{description}</p>
       </div>
-      <div className="px-6 py-5">{children}</div>
-    </section>
+      <div className="w-56 shrink-0">{control}</div>
+    </div>
   );
 }
 
-function ChoiceRow<T extends string>({
+function SelectControl<T extends string | number>({
   value,
   choices,
   onChange,
@@ -175,21 +174,21 @@ function ChoiceRow<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <select
+      value={value}
+      onChange={(event) => {
+        const choice = choices.find(
+          ({ value: choiceValue }) => String(choiceValue) === event.target.value
+        );
+        if (choice) onChange(choice.value);
+      }}
+      className="border-input bg-background focus:ring-ring/50 h-9 w-full rounded-md border px-3 text-sm outline-none focus:ring-2">
       {choices.map((choice) => (
-        <button
-          key={choice.value}
-          type="button"
-          onClick={() => onChange(choice.value)}
-          className={cn(
-            "border-border bg-background/40 hover:bg-accent flex min-h-14 items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors",
-            value === choice.value && "border-ring bg-accent ring-ring/30 ring-1"
-          )}>
-          <span>{choice.label}</span>
-          {value === choice.value ? <Check className="size-4" /> : null}
-        </button>
+        <option key={choice.value} value={choice.value}>
+          {choice.label}
+        </option>
       ))}
-    </div>
+    </select>
   );
 }
 
@@ -201,33 +200,37 @@ function AppearanceSettings({
   onChange: (update: Partial<AppSettings>) => void;
 }) {
   return (
-    <div className="space-y-5">
-      <SettingCard
+    <div>
+      <SettingRow
         title="Color theme"
-        description="Choose how the application matches your preferred appearance.">
-        <ChoiceRow<AppTheme>
-          value={settings.theme}
-          onChange={(theme) => onChange({ theme })}
-          choices={[
-            { value: "system", label: "System" },
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-          ]}
-        />
-      </SettingCard>
-      <SettingCard
+        description="Choose how the application matches your preferred appearance."
+        control={
+          <SelectControl<AppTheme>
+            value={settings.theme}
+            onChange={(theme) => onChange({ theme })}
+            choices={[
+              { value: "system", label: "System" },
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+            ]}
+          />
+        }
+      />
+      <SettingRow
         title="Interface font"
-        description="Choose the typeface used throughout the application.">
-        <ChoiceRow<AppFont>
-          value={settings.font}
-          onChange={(font) => onChange({ font })}
-          choices={[
-            { value: "geist", label: "Geist" },
-            { value: "system-sans", label: "System Sans" },
-            { value: "system-serif", label: "System Serif" },
-          ]}
-        />
-      </SettingCard>
+        description="Choose the typeface used throughout the application."
+        control={
+          <SelectControl<AppFont>
+            value={settings.font}
+            onChange={(font) => onChange({ font })}
+            choices={[
+              { value: "geist", label: "Geist" },
+              { value: "system-sans", label: "System Sans" },
+              { value: "system-serif", label: "System Serif" },
+            ]}
+          />
+        }
+      />
     </div>
   );
 }
@@ -240,19 +243,44 @@ function EditorSettings({
   onChange: (update: Partial<AppSettings>) => void;
 }) {
   return (
-    <SettingCard
+    <SettingRow
       title="Monaco color theme"
-      description="Control the syntax highlighting theme used by file and diff viewers.">
-      <ChoiceRow<MonacoTheme>
-        value={settings.monacoTheme}
-        onChange={(monacoTheme) => onChange({ monacoTheme })}
-        choices={[
-          { value: "system", label: "Match app" },
-          { value: "light", label: "Vitesse Light" },
-          { value: "dark", label: "Vitesse Dark" },
-        ]}
+      description="Control the syntax highlighting theme used by file and diff viewers."
+      control={
+        <SelectControl<MonacoTheme>
+          value={settings.monacoTheme}
+          onChange={(monacoTheme) => onChange({ monacoTheme })}
+          choices={[
+            { value: "system", label: "Match app" },
+            { value: "light", label: "Vitesse Light" },
+            { value: "dark", label: "Vitesse Dark" },
+          ]}
+        />
+      }
+    />
+  );
+}
+
+function ToggleControl({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer justify-end">
+      <input
+        aria-label={label}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="peer sr-only"
+        type="checkbox"
       />
-    </SettingCard>
+      <span className="bg-muted peer-checked:bg-primary relative block h-6 w-10 rounded-full transition-colors after:absolute after:top-1 after:left-1 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
+    </label>
   );
 }
 
@@ -264,29 +292,17 @@ function GraphSettings({
   onChange: (update: Partial<AppSettings>) => void;
 }) {
   return (
-    <SettingCard
+    <SettingRow
       title="Committed files"
-      description="Choose whether files that are already committed remain visible in session activity and the graph.">
-      <label className="flex cursor-pointer items-center justify-between gap-6">
-        <span>
-          <span className="block text-sm font-medium">Hide committed files</span>
-          <span className="text-muted-foreground mt-1 block text-sm">
-            Keeps the graph focused on outstanding working-tree changes.
-          </span>
-        </span>
-        <span className="relative shrink-0">
-          <input
-            aria-label="Hide committed files"
-            checked={settings.hideCommittedFiles}
-            onChange={(event) => onChange({ hideCommittedFiles: event.target.checked })}
-            className="peer sr-only"
-            type="checkbox"
-          />
-          <span className="bg-muted peer-checked:bg-primary block h-6 w-10 rounded-full transition-colors" />
-          <span className="bg-background pointer-events-none absolute top-1 left-1 size-4 rounded-full shadow-sm transition-transform peer-checked:translate-x-4" />
-        </span>
-      </label>
-    </SettingCard>
+      description="Hide committed files to keep activity and the graph focused on outstanding changes."
+      control={
+        <ToggleControl
+          label="Hide committed files"
+          checked={settings.hideCommittedFiles}
+          onChange={(hideCommittedFiles) => onChange({ hideCommittedFiles })}
+        />
+      }
+    />
   );
 }
 
@@ -298,15 +314,16 @@ function KeyboardSettings({
   onChange: (update: Partial<AppSettings>) => void;
 }) {
   return (
-    <SettingCard
-      title="Application shortcuts"
-      description="Focus a shortcut field and press a new key combination. Press Delete to restore its default.">
-      <div className="divide-border -mx-6 -my-5 divide-y">
+    <div>
+      <p className="text-muted-foreground mb-5 text-sm">
+        Focus a shortcut field and press a new key combination. Press Delete to restore its default.
+      </p>
+      <div className="divide-border divide-y">
         {keyboardShortcuts.map((shortcut) => {
           const storedShortcut = settings.keyboardShortcuts[shortcut.id];
           return (
             <label
-              className="flex items-center justify-between gap-4 px-6 py-3.5 text-sm"
+              className="flex items-center justify-between gap-4 py-3.5 text-sm"
               key={shortcut.id}>
               <span>
                 {shortcut.action
@@ -345,7 +362,7 @@ function KeyboardSettings({
           );
         })}
       </div>
-    </SettingCard>
+    </div>
   );
 }
 
@@ -361,17 +378,19 @@ function RuntimeSettings({
   const homes = settings.runtimeHomes;
   const sourceByProvider = new Map(runtimeSources.map((source) => [source.provider, source]));
   return (
-    <SettingCard
-      title="Runtime directories"
-      description="Leave a field empty to use the default directory. Values are stored in ~/.config/coding-agent-va/config.toml.">
-      <div className="divide-border -mx-6 -my-5 divide-y">
+    <div>
+      <p className="text-muted-foreground mb-5 text-sm">
+        Leave a field empty to use the default directory. Values are stored in
+        ~/.config/coding-agent-va/config.toml.
+      </p>
+      <div className="divide-border divide-y">
         {(["codex", "claude", "pi"] as const).map((provider) => (
-          <label className="block px-6 py-5" key={provider}>
-            <span className="mb-1.5 flex items-center justify-between text-sm font-medium">
+          <label className="flex items-center justify-between gap-8 py-4" key={provider}>
+            <span className="min-w-0 text-sm font-medium">
               <span>
                 {provider === "pi" ? "Pi Agent" : provider === "claude" ? "Claude Code" : "Codex"}
               </span>
-              <span className="text-muted-foreground text-xs font-normal">
+              <span className="text-muted-foreground ml-2 text-xs font-normal">
                 {sourceByProvider.get(provider)?.available ? "Available" : "Not found"}
               </span>
             </span>
@@ -383,12 +402,12 @@ function RuntimeSettings({
               placeholder={
                 sourceByProvider.get(provider)?.runtimeHome ?? "Default runtime directory"
               }
-              className="border-input bg-background focus:ring-ring/50 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2"
+              className="border-input bg-background focus:ring-ring/50 h-9 w-80 shrink-0 rounded-md border px-3 text-sm outline-none focus:ring-2"
             />
           </label>
         ))}
       </div>
-    </SettingCard>
+    </div>
   );
 }
 

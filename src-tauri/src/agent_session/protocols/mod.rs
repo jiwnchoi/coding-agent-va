@@ -13,6 +13,7 @@ use super::activity::{
     filter_written_files_by_git_status, remove_edited_files_from_read_files,
     resolve_impacted_file_relations, sort_file_activity, ActivityAccumulator,
 };
+use super::titles::normalize_title;
 use super::types::{
     AgentRuntimeSource, AgentSessionFileActivity, AgentSessionProvider, AgentSessionSummary,
 };
@@ -130,7 +131,7 @@ pub(crate) fn build_session_summary(
         provider,
         provider_session_id,
         provider_label: provider.label().to_string(),
-        title,
+        title: normalize_title(title),
         transcript_path: transcript_path.display().to_string(),
         cwd,
         runtime_home: runtime_home.display().to_string(),

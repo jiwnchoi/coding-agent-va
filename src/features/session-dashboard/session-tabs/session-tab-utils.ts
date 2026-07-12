@@ -1,10 +1,10 @@
-import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
 
-export function getActiveSessionIds(sessions: AgentSessionSummary[], nowMs: number) {
-  return sessions
-    .filter((session) => nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS)
-    .map((session) => session.id);
+export function isSessionChecked(
+  session: AgentSessionSummary,
+  viewedSessionUpdatedAtMs: Record<string, number>
+) {
+  return (viewedSessionUpdatedAtMs[session.id] ?? -1) >= session.updatedAtMs;
 }
 
 export function rotateSession(
@@ -31,19 +31,13 @@ export function closeSessionTab(
   const closedSessionIndex = openSessionIds.indexOf(sessionId);
 
   if (closedSessionIndex < 0) {
-    return {
-      nextOpenSessionIds: openSessionIds,
-      nextSelectedSessionId: selectedSessionId,
-    };
+    return { nextOpenSessionIds: openSessionIds, nextSelectedSessionId: selectedSessionId };
   }
 
   const nextOpenSessionIds = openSessionIds.filter((openSessionId) => openSessionId !== sessionId);
 
   if (sessionId !== selectedSessionId) {
-    return {
-      nextOpenSessionIds,
-      nextSelectedSessionId: selectedSessionId,
-    };
+    return { nextOpenSessionIds, nextSelectedSessionId: selectedSessionId };
   }
 
   const fallbackIndex = Math.min(closedSessionIndex, nextOpenSessionIds.length - 1);
@@ -71,7 +65,7 @@ export function updateSessionHistory(
   ];
 }
 
-export function selectMostRecentlyActiveSession(
+export function selectMostRecentlyUsedSession(
   historySessionIds: string[],
   openSessionIds: string[],
   selectedSessionId: string
@@ -97,49 +91,29 @@ export function reconcileTabState({
   currentDismissedSessionIds,
   currentOpenSessionIds,
   currentSelectedSessionId,
-  nowMs,
-  previousActiveSessionIds,
   sessions,
 }: {
   currentDismissedSessionIds: string[];
   currentOpenSessionIds: string[];
   currentSelectedSessionId: string;
-  nowMs: number;
-  previousActiveSessionIds: string[];
   sessions: AgentSessionSummary[];
 }) {
-  const activeSessionIds = getActiveSessionIds(sessions, nowMs);
-  const previousActiveSessionIdSet = new Set(previousActiveSessionIds);
-  const availableSessionIdSet = new Set(sessions.map((session) => session.id));
-  const nextDismissedSessionIds = currentDismissedSessionIds.filter((sessionId) =>
-    availableSessionIdSet.has(sessionId)
-  );
-  const dismissedSessionIdSet = new Set(nextDismissedSessionIds);
-  const newlyActiveSessionIds = activeSessionIds.filter(
-    (sessionId) => !previousActiveSessionIdSet.has(sessionId)
-  );
-  const baseOpenSessionIds = currentOpenSessionIds.filter((sessionId) =>
-    availableSessionIdSet.has(sessionId)
-  );
-  const nextOpenSessionIds = [...baseOpenSessionIds];
+  const dismissedSessionIdSet = new Set(currentDismissedSessionIds);
+  const nextOpenSessionIds = [...currentOpenSessionIds];
 
-  for (const sessionId of activeSessionIds) {
-    if (newlyActiveSessionIds.includes(sessionId) || !dismissedSessionIdSet.has(sessionId)) {
-      if (!nextOpenSessionIds.includes(sessionId)) {
-        nextOpenSessionIds.push(sessionId);
-      }
+  for (const session of sessions) {
+    if (!dismissedSessionIdSet.has(session.id) && !nextOpenSessionIds.includes(session.id)) {
+      nextOpenSessionIds.push(session.id);
     }
   }
 
-  const isSelectedSessionAvailable = availableSessionIdSet.has(currentSelectedSessionId);
+  const isSelectedSessionAvailable = nextOpenSessionIds.includes(currentSelectedSessionId);
   const nextSelectedSessionId =
     currentSelectedSessionId && isSelectedSessionAvailable
       ? currentSelectedSessionId
       : (nextOpenSessionIds[0] ?? (isSelectedSessionAvailable ? currentSelectedSessionId : ""));
 
   return {
-    activeSessionIds,
-    nextDismissedSessionIds,
     nextOpenSessionIds,
     nextSelectedSessionId,
   };

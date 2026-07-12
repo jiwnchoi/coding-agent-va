@@ -2,8 +2,8 @@ import { Claude, OpenAI } from "@lobehub/icons";
 import { ChevronDown, Search } from "lucide-react";
 
 import piLogo from "@/assets/agent-logos/pi.svg";
-import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
+import { isSessionChecked } from "@/features/session-dashboard/session-tabs/session-tab-utils";
 import { Button } from "@/shared/components/ui/button";
 import {
   DropdownMenu,
@@ -41,15 +41,15 @@ function ProviderLogo({ provider }: { provider: SessionProvider }) {
 }
 
 export function SessionPickerDropdown({
-  nowMs,
   searchQuery,
   sessions,
+  viewedSessionUpdatedAtMs,
   setSearchQuery,
   onSelectSession,
 }: {
-  nowMs: number;
   searchQuery: string;
   sessions: AgentSessionSummary[];
+  viewedSessionUpdatedAtMs: Record<string, number>;
   setSearchQuery: (value: string) => void;
   onSelectSession: (sessionId: string) => void;
 }) {
@@ -88,7 +88,7 @@ export function SessionPickerDropdown({
         </div>
         <DropdownMenuSeparator />
         {visibleSessions.map((session) => {
-          const isActive = nowMs - session.updatedAtMs <= ACTIVE_SESSION_WINDOW_MS;
+          const isChecked = isSessionChecked(session, viewedSessionUpdatedAtMs);
 
           return (
             <DropdownMenuItem
@@ -100,12 +100,11 @@ export function SessionPickerDropdown({
               <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
                 <span
                   className={
-                    isActive
-                      ? "size-2 rounded-full bg-green-500"
-                      : "size-2 rounded-full bg-orange-500"
+                    isChecked
+                      ? "size-2 rounded-full bg-orange-500"
+                      : "size-2 rounded-full bg-green-500"
                   }
                 />
-                {isActive ? "Active" : "Idle"}
               </span>
             </DropdownMenuItem>
           );

@@ -114,51 +114,55 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     visibleHierarchy.edges
   );
 
-  const impactEdges = options.fileActivity.impactedRelations
-    .map((relation): ContextGraphEdge | null => {
-      const changedFile = normalizeWorkspacePath(relation.changedFile, workspacePath);
-      const impactedFile = normalizeWorkspacePath(relation.impactedFile, workspacePath);
-      const source = fileNodeIdByPathKey.get(changedFile);
-      const target = fileNodeIdByPathKey.get(impactedFile);
+  const impactEdgesById = new Map(
+    options.fileActivity.impactedRelations
+      .map((relation): ContextGraphEdge | null => {
+        const changedFile = normalizeWorkspacePath(relation.changedFile, workspacePath);
+        const impactedFile = normalizeWorkspacePath(relation.impactedFile, workspacePath);
+        const source = fileNodeIdByPathKey.get(changedFile);
+        const target = fileNodeIdByPathKey.get(impactedFile);
 
-      if (!source || !target || !visibleNodeIds.has(source) || !visibleNodeIds.has(target)) {
-        return null;
-      }
+        if (!source || !target || !visibleNodeIds.has(source) || !visibleNodeIds.has(target)) {
+          return null;
+        }
 
-      const isHighlighted = selectedFilePath === changedFile || selectedFilePath === impactedFile;
-      const isRead = activityByPath.get(impactedFile)?.includes("read") ?? false;
-      const edgeColor = isRead ? IMPACT_EDGE_COLOR : UNREAD_IMPACT_EDGE_COLOR;
+        const isHighlighted = selectedFilePath === changedFile || selectedFilePath === impactedFile;
+        const isRead = activityByPath.get(impactedFile)?.includes("read") ?? false;
+        const edgeColor = isRead ? IMPACT_EDGE_COLOR : UNREAD_IMPACT_EDGE_COLOR;
 
-      const edgeId = `impact:${source}->${target}:${relation.importSpecifier}`;
+        const edgeId = `impact:${source}->${target}`;
 
-      return {
-        id: edgeId,
-        source,
-        target,
-        className: isHighlighted
-          ? isRead
-            ? styles.highlightedImpactEdge
-            : styles.highlightedUnreadImpactEdge
-          : isRead
-            ? styles.impactEdge
-            : styles.unreadImpactEdge,
-        data: {
-          kind: "impact",
-          importSpecifier: relation.importSpecifier,
-          isHighlighted,
-        },
-        markerEnd: {
-          color: edgeColor,
-          height: IMPACT_EDGE_MARKER_SIZE,
-          strokeWidth: 1.5,
-          type: "arrowclosed",
-          width: IMPACT_EDGE_MARKER_SIZE,
-        },
-        type: "contextGraphImpactEdge",
-        zIndex: 20,
-      };
-    })
-    .filter((edge): edge is ContextGraphEdge => edge !== null);
+        return {
+          id: edgeId,
+          source,
+          target,
+          className: isHighlighted
+            ? isRead
+              ? styles.highlightedImpactEdge
+              : styles.highlightedUnreadImpactEdge
+            : isRead
+              ? styles.impactEdge
+              : styles.unreadImpactEdge,
+          data: {
+            kind: "impact",
+            importSpecifier: relation.importSpecifier,
+            isHighlighted,
+          },
+          markerEnd: {
+            color: edgeColor,
+            height: IMPACT_EDGE_MARKER_SIZE,
+            strokeWidth: 1.5,
+            type: "arrowclosed",
+            width: IMPACT_EDGE_MARKER_SIZE,
+          },
+          type: "contextGraphImpactEdge",
+          zIndex: 20,
+        };
+      })
+      .filter((edge): edge is ContextGraphEdge => edge !== null)
+      .map((edge) => [edge.id, edge] as const)
+  );
+  const impactEdges = [...impactEdgesById.values()];
   const nodeIds = new Set(collapsedHierarchy.nodes.map((node) => node.id));
 
   return {

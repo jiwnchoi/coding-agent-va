@@ -35,6 +35,7 @@ const edgeTypes = {
 const FIT_VIEW_OPTIONS = {
   padding: 0.08,
 } as const;
+const EDGE_ENDPOINT_GAP = 1;
 const EMPTY_PINNED_FILE_PATHS: string[] = [];
 const handlePositions = [
   ["top", Position.Top],
@@ -246,17 +247,21 @@ function ContextGraphNodeComponent({ data }: NodeProps<ContextGraphNode>) {
 
 function ContextGraphContainsEdgeComponent({
   markerEnd,
+  sourcePosition,
   sourceX,
   sourceY,
+  targetPosition,
   targetX,
   targetY,
 }: EdgeProps<ContextGraphEdge>) {
-  const bendX = (sourceX + targetX) / 2;
+  const sourcePoint = moveOutsideNode({ x: sourceX, y: sourceY }, sourcePosition);
+  const targetPoint = moveOutsideNode({ x: targetX, y: targetY }, targetPosition);
+  const bendX = (sourcePoint.x + targetPoint.x) / 2;
   const edgePath = [
-    `M ${sourceX},${sourceY}`,
-    `L ${bendX},${sourceY}`,
-    `L ${bendX},${targetY}`,
-    `L ${targetX},${targetY}`,
+    `M ${sourcePoint.x},${sourcePoint.y}`,
+    `L ${bendX},${sourcePoint.y}`,
+    `L ${bendX},${targetPoint.y}`,
+    `L ${targetPoint.x},${targetPoint.y}`,
   ].join(" ");
 
   return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
@@ -272,14 +277,20 @@ function ContextGraphImpactEdgeComponent({
   targetX,
   targetY,
 }: EdgeProps<ContextGraphEdge>) {
-  const sourcePoint = {
-    x: sourceX + (data?.sourceOffset?.x ?? 0),
-    y: sourceY + (data?.sourceOffset?.y ?? 0),
-  };
-  const targetPoint = {
-    x: targetX + (data?.targetOffset?.x ?? 0),
-    y: targetY + (data?.targetOffset?.y ?? 0),
-  };
+  const sourcePoint = moveOutsideNode(
+    {
+      x: sourceX + (data?.sourceOffset?.x ?? 0),
+      y: sourceY + (data?.sourceOffset?.y ?? 0),
+    },
+    sourcePosition
+  );
+  const targetPoint = moveOutsideNode(
+    {
+      x: targetX + (data?.targetOffset?.x ?? 0),
+      y: targetY + (data?.targetOffset?.y ?? 0),
+    },
+    targetPosition
+  );
   const controlDistance = Math.max(
     36,
     Math.min(120, Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y) * 0.34)
@@ -294,6 +305,10 @@ function ContextGraphImpactEdgeComponent({
   ].join(" ");
 
   return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
+}
+
+function moveOutsideNode(point: { x: number; y: number }, position: Position) {
+  return controlPointForPosition(point, position, EDGE_ENDPOINT_GAP);
 }
 
 function controlPointForPosition(
