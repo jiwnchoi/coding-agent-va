@@ -11,17 +11,20 @@
 }
 
 .node {
+  --context-graph-node-border-color: var(--border);
+  border-color: var(--context-graph-node-border-color);
   border-width: var(--context-graph-border-width);
 }
 
 .node:not(.directoryNode):hover {
-  border-color: color-mix(in oklch, var(--foreground) 28%, var(--border));
-  box-shadow: 0 1rem 2.5rem color-mix(in oklch, var(--foreground) 12%, transparent);
+  box-shadow: 0 0 1rem 0.25rem
+    color-mix(in oklch, var(--context-graph-node-border-color) 38%, transparent);
 }
 
 .directoryNode {
   background: transparent;
-  border-color: color-mix(in oklch, var(--foreground) 22%, var(--border));
+  --context-graph-node-border-color: color-mix(in oklch, var(--foreground) 22%, var(--border));
+  border-color: var(--context-graph-node-border-color);
   border-radius: 0.625rem;
   box-shadow: none;
   pointer-events: none;
@@ -29,7 +32,6 @@
 
 .filelessDirectoryNode {
   background: var(--card);
-  border-color: var(--border);
   border-radius: 0.375rem;
   padding: 0.375rem 0.5rem;
 }
@@ -62,26 +64,30 @@
 }
 
 .editedNode {
-  border-color: #2ca02c;
+  --context-graph-node-border-color: #2ca02c;
+  border-color: var(--context-graph-node-border-color);
 }
 
 .deletedNode {
-  border-color: #d62728;
+  --context-graph-node-border-color: #d62728;
+  border-color: var(--context-graph-node-border-color);
 }
 
 .readImpactedNode {
-  border-color: #ff7f0e;
+  --context-graph-node-border-color: #ff7f0e;
+  border-color: var(--context-graph-node-border-color);
 }
 
 .unreadImpactedNode {
-  border-color: #d62728;
+  --context-graph-node-border-color: #d62728;
+  border-color: var(--context-graph-node-border-color);
 }
 
 .selectedNode {
-  border-color: color-mix(in oklch, var(--foreground) 58%, var(--border));
-  box-shadow:
-    0 0 0 3px color-mix(in oklch, var(--foreground) 10%, transparent),
-    0 1rem 2.5rem color-mix(in oklch, var(--foreground) 14%, transparent);
+  --context-graph-node-border-color: color-mix(in oklch, var(--foreground) 58%, var(--border));
+  border-color: var(--context-graph-node-border-color);
+  box-shadow: 0 0 1rem 0.25rem
+    color-mix(in oklch, var(--context-graph-node-border-color) 38%, transparent);
 }
 
 .handle {
@@ -141,5 +147,6 @@
 
 .error {
   background: color-mix(in oklch, var(--destructive) 14%, var(--card));
-  border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
+  --context-graph-node-border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
+  border-color: var(--context-graph-node-border-color);
 }

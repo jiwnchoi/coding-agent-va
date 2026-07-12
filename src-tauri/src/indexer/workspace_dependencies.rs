@@ -461,7 +461,7 @@ fn load_import_aliases(workspace_root: &Path) -> Vec<ImportAlias> {
     ["tsconfig.json", "jsconfig.json"]
         .into_iter()
         .filter_map(|name| fs::read_to_string(workspace_root.join(name)).ok())
-        .filter_map(|source| serde_json::from_str::<serde_json::Value>(&source).ok())
+        .filter_map(|source| parse_json_config(&source))
         .flat_map(|config| {
             let compiler_options = config.get("compilerOptions").cloned().unwrap_or_default();
             let base_url = compiler_options
@@ -488,6 +488,94 @@ fn load_import_aliases(workspace_root: &Path) -> Vec<ImportAlias> {
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+fn parse_json_config(source: &str) -> Option<serde_json::Value> {
+    serde_json::from_str(source)
+        .ok()
+        .or_else(|| serde_json::from_str(&sanitize_jsonc(source)).ok())
+}
+
+fn sanitize_jsonc(source: &str) -> String {
+    let mut without_comments = String::with_capacity(source.len());
+    let mut characters = source.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        if in_string {
+            without_comments.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            without_comments.push(character);
+            continue;
+        }
+        if character == '/' && characters.peek() == Some(&'/') {
+            characters.next();
+            for comment_character in characters.by_ref() {
+                if comment_character == '\n' {
+                    without_comments.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        if character == '/' && characters.peek() == Some(&'*') {
+            characters.next();
+            let mut previous = '\0';
+            for comment_character in characters.by_ref() {
+                if comment_character == '\n' {
+                    without_comments.push('\n');
+                }
+                if previous == '*' && comment_character == '/' {
+                    break;
+                }
+                previous = comment_character;
+            }
+            continue;
+        }
+        without_comments.push(character);
+    }
+
+    let mut sanitized = String::with_capacity(without_comments.len());
+    let mut characters = without_comments.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(character) = characters.next() {
+        if in_string {
+            sanitized.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if character == '"' {
+            in_string = true;
+            sanitized.push(character);
+            continue;
+        }
+        if character == ',' {
+            let mut lookahead = characters.clone();
+            let next = lookahead.find(|next| !next.is_whitespace());
+            if matches!(next, Some('}' | ']')) {
+                continue;
+            }
+        }
+        sanitized.push(character);
+    }
+    sanitized
 }
 
 fn import_alias(pattern: &str, target: &str, base_path: &Path) -> ImportAlias {

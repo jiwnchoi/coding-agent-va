@@ -154,7 +154,7 @@ fn resolves_path_aliases_through_barrels_to_jsx_consumers() {
     fs::create_dir_all(&components_dir).expect("create component dirs");
     fs::write(
         workspace_root.join("tsconfig.json"),
-        r#"{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}"#,
+        "{\n  // Workspace aliases\n  \"compilerOptions\": {\n    \"paths\": { \"@/*\": [\"./src/*\"], },\n  },\n}\n",
     )
     .expect("write tsconfig");
     fs::write(

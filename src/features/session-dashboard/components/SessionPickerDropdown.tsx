@@ -1,7 +1,6 @@
+import { Claude, OpenAI } from "@lobehub/icons";
 import { ChevronDown, Search } from "lucide-react";
 
-import claudeLogo from "@/assets/agent-logos/claude.svg";
-import codexLogo from "@/assets/agent-logos/codex.svg";
 import piLogo from "@/assets/agent-logos/pi.svg";
 import { ACTIVE_SESSION_WINDOW_MS } from "@/features/session-dashboard/constants";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
@@ -17,24 +16,26 @@ import { Input } from "@/shared/components/ui/input";
 
 type SessionProvider = AgentSessionSummary["provider"];
 
-const providerLogos: Record<SessionProvider, { label: string; src: string }> = {
-  codex: { label: "Codex", src: codexLogo },
-  claude: { label: "Claude", src: claudeLogo },
-  pi: { label: "Pi", src: piLogo },
+const providerLabels: Record<SessionProvider, string> = {
+  codex: "OpenAI",
+  claude: "Claude",
+  pi: "Pi",
 };
 
 function ProviderLogo({ provider }: { provider: SessionProvider }) {
-  const logo = providerLogos[provider];
+  const label = providerLabels[provider];
 
   return (
     <span
-      title={logo.label}
+      title={label}
       className="bg-muted text-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
-      <img
-        src={logo.src}
-        alt={logo.label}
-        className={provider === "claude" ? "size-4" : "size-4 dark:invert"}
-      />
+      {provider === "codex" ? (
+        <OpenAI aria-label={label} className="size-4" />
+      ) : provider === "claude" ? (
+        <Claude.Color aria-label={label} className="size-4" />
+      ) : (
+        <img src={piLogo} alt={label} className="size-4 dark:invert" />
+      )}
     </span>
   );
 }
