@@ -1,7 +1,7 @@
 import { NODE_HEIGHT, NODE_WIDTH } from "./layoutConstants";
 import { assignContainsEdgeHandles, assignImpactEdgeHandles } from "./layoutHandles";
 import { distributeImpactEdgeLanes } from "./layoutImpactLanes";
-import { optimizeImpactLayout } from "./optimizeImpactLayout";
+import { optimizeFolderOrder, optimizeImpactLayout } from "./optimizeImpactLayout";
 import type { ContextGraphModel, ContextGraphNode } from "./types";
 
 const FOLDER_PADDING = 14;
@@ -86,47 +86,53 @@ export function layoutContextGraphWithHierarchy(model: ContextGraphModel) {
   const roots = nodes.filter((node) => !childIds.has(node.id)).sort(compareNodes);
   roots.filter(isFolder).forEach(measureSubtree);
 
-  const positionedNodes: ContextGraphNode[] = [];
-  const positionFolder = (folder: ContextGraphNode, x: number, subtreeY: number) => {
-    const size = sizeById.get(folder.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
-    const subtreeHeight = subtreeHeightById.get(folder.id) ?? size.height;
-    const folderY = subtreeY + (subtreeHeight - size.height) / 2;
+  const positionHierarchy = () => {
+    const positionedNodes: ContextGraphNode[] = [];
+    const positionFolder = (folder: ContextGraphNode, x: number, subtreeY: number) => {
+      const size = sizeById.get(folder.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+      const subtreeHeight = subtreeHeightById.get(folder.id) ?? size.height;
+      const folderY = subtreeY + (subtreeHeight - size.height) / 2;
 
-    positionedNodes.push(positionedNode(folder, x, folderY, size, 0));
+      positionedNodes.push(positionedNode(folder, x, folderY, size, 0));
 
-    let fileY = folderY + FOLDER_PADDING;
-    for (const file of filesByFolderId.get(folder.id) ?? []) {
-      const fileSize = sizeById.get(file.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
-      positionedNodes.push(positionedNode(file, x + FOLDER_PADDING, fileY, fileSize, 10));
-      fileY += fileSize.height + FILE_GAP;
+      let fileY = folderY + FOLDER_PADDING;
+      for (const file of filesByFolderId.get(folder.id) ?? []) {
+        const fileSize = sizeById.get(file.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+        positionedNodes.push(positionedNode(file, x + FOLDER_PADDING, fileY, fileSize, 10));
+        fileY += fileSize.height + FILE_GAP;
+      }
+
+      let childY = subtreeY;
+      for (const childFolder of foldersByParentId.get(folder.id) ?? []) {
+        const positionedChild = updatedNodeById.get(childFolder.id) ?? childFolder;
+        positionFolder(positionedChild, x + size.width + FOLDER_HORIZONTAL_GAP, childY);
+        const childSize = sizeById.get(childFolder.id) ?? {
+          width: NODE_WIDTH,
+          height: NODE_HEIGHT,
+        };
+        childY += (subtreeHeightById.get(childFolder.id) ?? childSize.height) + FOLDER_VERTICAL_GAP;
+      }
+    };
+
+    let rootY = 0;
+    for (const root of roots) {
+      if (isFolder(root)) {
+        positionFolder(root, 0, rootY);
+        const rootSize = sizeById.get(root.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+        rootY += (subtreeHeightById.get(root.id) ?? rootSize.height) + ROOT_GAP;
+        continue;
+      }
+
+      const size = sizeById.get(root.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
+      positionedNodes.push(positionedNode(root, 0, rootY, size, 10));
+      rootY += size.height + ROOT_GAP;
     }
 
-    let childY = subtreeY;
-    for (const childFolder of foldersByParentId.get(folder.id) ?? []) {
-      const positionedChild = updatedNodeById.get(childFolder.id) ?? childFolder;
-      positionFolder(positionedChild, x + size.width + FOLDER_HORIZONTAL_GAP, childY);
-      const childSize = sizeById.get(childFolder.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
-      const childHasFolders = (foldersByParentId.get(childFolder.id)?.length ?? 0) > 0;
-      const childLayoutHeight = childHasFolders
-        ? (subtreeHeightById.get(childFolder.id) ?? childSize.height)
-        : childSize.height;
-      childY += childLayoutHeight + FOLDER_VERTICAL_GAP;
-    }
+    return positionedNodes;
   };
 
-  let rootY = 0;
-  for (const root of roots) {
-    if (isFolder(root)) {
-      positionFolder(root, 0, rootY);
-      const rootSize = sizeById.get(root.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
-      rootY += (subtreeHeightById.get(root.id) ?? rootSize.height) + ROOT_GAP;
-      continue;
-    }
-
-    const size = sizeById.get(root.id) ?? { width: NODE_WIDTH, height: NODE_HEIGHT };
-    positionedNodes.push(positionedNode(root, 0, rootY, size, 10));
-    rootY += size.height + ROOT_GAP;
-  }
+  optimizeFolderOrder(roots, foldersByParentId, model.impactEdges, positionHierarchy);
+  const positionedNodes = positionHierarchy();
 
   const optimizedNodes = optimizeImpactLayout(positionedNodes, model.impactEdges, filesByFolderId);
   const positionById = new Map(optimizedNodes.map((node) => [node.id, node.position]));

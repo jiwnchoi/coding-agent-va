@@ -91,19 +91,23 @@ export function reconcileTabState({
   currentDismissedSessionIds,
   currentOpenSessionIds,
   currentSelectedSessionId,
+  openUntrackedSessions,
   sessions,
 }: {
   currentDismissedSessionIds: string[];
   currentOpenSessionIds: string[];
   currentSelectedSessionId: string;
+  openUntrackedSessions: boolean;
   sessions: AgentSessionSummary[];
 }) {
   const dismissedSessionIdSet = new Set(currentDismissedSessionIds);
   const nextOpenSessionIds = [...currentOpenSessionIds];
 
-  for (const session of sessions) {
-    if (!dismissedSessionIdSet.has(session.id) && !nextOpenSessionIds.includes(session.id)) {
-      nextOpenSessionIds.push(session.id);
+  if (openUntrackedSessions) {
+    for (const session of sessions) {
+      if (!dismissedSessionIdSet.has(session.id) && !nextOpenSessionIds.includes(session.id)) {
+        nextOpenSessionIds.push(session.id);
+      }
     }
   }
 

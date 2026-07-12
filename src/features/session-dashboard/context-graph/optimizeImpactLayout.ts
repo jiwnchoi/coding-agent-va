@@ -11,6 +11,60 @@ const EDGE_CROSSING_COST = 2_500;
 const EDGE_LENGTH_COST = 0.01;
 const MAX_OPTIMIZATION_PASSES = 6;
 
+type PositionHierarchy = () => ContextGraphNode[];
+
+/**
+ * Reorders sibling directory subtrees, including root directories. A candidate
+ * is laid out again because directory subtrees can have different heights.
+ */
+export function optimizeFolderOrder(
+  roots: ContextGraphNode[],
+  foldersByParentId: Map<string, ContextGraphNode[]>,
+  impactEdges: ContextGraphModel["impactEdges"],
+  positionHierarchy: PositionHierarchy
+) {
+  if (impactEdges.length === 0) {
+    return;
+  }
+
+  const siblingGroups = [roots, ...foldersByParentId.values()];
+  let currentScore = scoreNodes(positionHierarchy(), impactEdges);
+
+  for (let pass = 0; pass < MAX_OPTIMIZATION_PASSES; pass += 1) {
+    let bestSwap: { siblings: ContextGraphNode[]; leftIndex: number; rightIndex: number } | null =
+      null;
+    let bestScore = currentScore;
+
+    for (const siblings of siblingGroups) {
+      const folderIndexes = siblings.flatMap((node, index) =>
+        node.data.kind === "directory" ? [index] : []
+      );
+
+      for (let left = 0; left < folderIndexes.length - 1; left += 1) {
+        for (let right = left + 1; right < folderIndexes.length; right += 1) {
+          const leftIndex = folderIndexes[left];
+          const rightIndex = folderIndexes[right];
+          swapArrayItems(siblings, leftIndex, rightIndex);
+          const candidateScore = scoreNodes(positionHierarchy(), impactEdges);
+          swapArrayItems(siblings, leftIndex, rightIndex);
+
+          if (candidateScore < bestScore) {
+            bestSwap = { siblings, leftIndex, rightIndex };
+            bestScore = candidateScore;
+          }
+        }
+      }
+    }
+
+    if (!bestSwap) {
+      break;
+    }
+
+    swapArrayItems(bestSwap.siblings, bestSwap.leftIndex, bestSwap.rightIndex);
+    currentScore = bestScore;
+  }
+}
+
 /**
  * Reorders files inside each directory without moving the directory hierarchy.
  * Pair swaps are accepted only when they reduce edge/node intersections, then
@@ -60,6 +114,12 @@ export function optimizeImpactLayout(
     ...node,
     position: positionById.get(node.id) ?? node.position,
   }));
+}
+
+function scoreNodes(nodes: ContextGraphNode[], edges: ContextGraphModel["impactEdges"]) {
+  const positionById = new Map(nodes.map((node) => [node.id, node.position]));
+  const fileNodes = nodes.filter((node) => node.data.kind === "file");
+  return scoreLayout(positionById, fileNodes, edges);
 }
 
 function scoreLayout(
@@ -131,4 +191,10 @@ function swapPositions(positionById: Map<string, LayoutPoint>, leftId: string, r
     positionById.set(leftId, right);
     positionById.set(rightId, left);
   }
+}
+
+function swapArrayItems<T>(items: T[], leftIndex: number, rightIndex: number) {
+  const left = items[leftIndex];
+  items[leftIndex] = items[rightIndex];
+  items[rightIndex] = left;
 }

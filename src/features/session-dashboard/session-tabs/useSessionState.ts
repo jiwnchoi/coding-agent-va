@@ -18,6 +18,8 @@ export function useSessionState() {
   const openSessionIdsRef = useRef(openSessionIds);
   const selectedSessionIdRef = useRef(selectedSessionId);
   const sessionHistoryIdsRef = useRef(sessionHistoryIds);
+  const hasInitializedSessionTabsRef = useRef(false);
+  const hasInitializedViewedSessionsRef = useRef(false);
 
   useEffect(() => {
     dismissedSessionIdsRef.current = dismissedSessionIds;
@@ -104,10 +106,19 @@ export function useSessionState() {
 
   const reconcileSessions = useCallback(
     (nextSessions: AgentSessionSummary[]) => {
+      const shouldInitializeSessionTabs = !hasInitializedSessionTabsRef.current;
+      hasInitializedSessionTabsRef.current = true;
+      const shouldInitializeViewedSessions = !hasInitializedViewedSessionsRef.current;
+      hasInitializedViewedSessionsRef.current = true;
+      const currentOpenSessionIds = shouldInitializeSessionTabs ? [] : openSessionIdsRef.current;
+      const currentSelectedSessionId = shouldInitializeSessionTabs
+        ? ""
+        : selectedSessionIdRef.current;
       const { nextOpenSessionIds, nextSelectedSessionId } = reconcileTabState({
         currentDismissedSessionIds: dismissedSessionIdsRef.current,
-        currentOpenSessionIds: openSessionIdsRef.current,
-        currentSelectedSessionId: selectedSessionIdRef.current,
+        currentOpenSessionIds,
+        currentSelectedSessionId,
+        openUntrackedSessions: !shouldInitializeSessionTabs,
         sessions: nextSessions,
       });
 
@@ -125,10 +136,10 @@ export function useSessionState() {
               nextOpenSessionIds.includes(sessionId)
           )
         );
-        const initialSession = nextSessions.find((session) => session.id === nextSelectedSessionId);
-
-        if (!selectedSessionIdRef.current && initialSession) {
-          nextViewed[initialSession.id] = initialSession.updatedAtMs;
+        if (shouldInitializeViewedSessions) {
+          for (const session of nextSessions) {
+            nextViewed[session.id] = session.updatedAtMs;
+          }
         }
 
         return nextViewed;

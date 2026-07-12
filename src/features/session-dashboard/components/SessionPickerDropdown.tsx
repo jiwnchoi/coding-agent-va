@@ -1,5 +1,7 @@
 import { Claude, OpenAI } from "@lobehub/icons";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import piLogo from "@/assets/agent-logos/pi.svg";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
@@ -15,6 +17,9 @@ import {
 import { Input } from "@/shared/components/ui/input";
 
 type SessionProvider = AgentSessionSummary["provider"];
+
+const SESSION_PAGE_SIZE = 30;
+const SESSION_LOAD_AHEAD_COUNT = 5;
 
 const providerLabels: Record<SessionProvider, string> = {
   codex: "OpenAI",
@@ -54,18 +59,6 @@ export function SessionPickerDropdown({
   onSelectSession: (sessionId: string) => void;
 }) {
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredSessions = sessions.filter((session) => {
-    if (!normalizedQuery) {
-      return true;
-    }
-
-    return [session.title, session.cwd ?? ""].some((value) =>
-      value.toLowerCase().includes(normalizedQuery)
-    );
-  });
-  const visibleSessions = filteredSessions.slice(0, 5);
-  const hasSearchResults = visibleSessions.length > 0;
-
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -87,14 +80,98 @@ export function SessionPickerDropdown({
           </div>
         </div>
         <DropdownMenuSeparator />
-        {visibleSessions.map((session) => {
+        <SessionPickerVirtualList
+          key={normalizedQuery}
+          normalizedQuery={normalizedQuery}
+          sessions={sessions}
+          viewedSessionUpdatedAtMs={viewedSessionUpdatedAtMs}
+          onSelectSession={onSelectSession}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SessionPickerVirtualList({
+  normalizedQuery,
+  sessions,
+  viewedSessionUpdatedAtMs,
+  onSelectSession,
+}: {
+  normalizedQuery: string;
+  sessions: AgentSessionSummary[];
+  viewedSessionUpdatedAtMs: Record<string, number>;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  const [loadedSessionCount, setLoadedSessionCount] = useState(SESSION_PAGE_SIZE);
+  const scrollElementRef = useRef<HTMLDivElement>(null);
+  const filteredSessions = useMemo(
+    () =>
+      sessions.filter((session) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        return [session.title, session.cwd ?? ""].some((value) =>
+          value.toLowerCase().includes(normalizedQuery)
+        );
+      }),
+    [normalizedQuery, sessions]
+  );
+  const visibleSessions = filteredSessions.slice(0, loadedSessionCount);
+  const hasSearchResults = filteredSessions.length > 0;
+  const hasMoreSessions = visibleSessions.length < filteredSessions.length;
+  const rowVirtualizer = useVirtualizer({
+    count: visibleSessions.length,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () => 36,
+    overscan: 5,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    const lastVirtualRow = virtualRows[virtualRows.length - 1];
+
+    if (
+      hasMoreSessions &&
+      lastVirtualRow !== undefined &&
+      lastVirtualRow.index >= visibleSessions.length - SESSION_LOAD_AHEAD_COUNT
+    ) {
+      setLoadedSessionCount((currentCount) =>
+        Math.min(currentCount + SESSION_PAGE_SIZE, filteredSessions.length)
+      );
+    }
+  }, [filteredSessions.length, hasMoreSessions, visibleSessions.length, virtualRows]);
+
+  if (!hasSearchResults) {
+    return sessions.length === 0 ? (
+      <DropdownMenuItem disabled>No agent sessions found</DropdownMenuItem>
+    ) : (
+      <DropdownMenuItem disabled>No matching sessions</DropdownMenuItem>
+    );
+  }
+
+  return (
+    <div ref={scrollElementRef} className="max-h-80 overflow-y-auto">
+      <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+        {virtualRows.map((virtualRow) => {
+          const session = visibleSessions[virtualRow.index];
           const isChecked = isSessionChecked(session, viewedSessionUpdatedAtMs);
 
           return (
             <DropdownMenuItem
               key={session.id}
+              data-index={virtualRow.index}
+              ref={rowVirtualizer.measureElement}
               onSelect={() => onSelectSession(session.id)}
-              className="border border-transparent">
+              className="border border-transparent"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualRow.start}px)`,
+              }}>
               <ProviderLogo provider={session.provider} />
               <span className="min-w-0 flex-1 truncate">{session.title}</span>
               <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
@@ -109,13 +186,7 @@ export function SessionPickerDropdown({
             </DropdownMenuItem>
           );
         })}
-        {sessions.length === 0 ? (
-          <DropdownMenuItem disabled>No agent sessions found</DropdownMenuItem>
-        ) : null}
-        {sessions.length > 0 && !hasSearchResults ? (
-          <DropdownMenuItem disabled>No matching sessions</DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </div>
+    </div>
   );
 }
