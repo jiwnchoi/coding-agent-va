@@ -1,21 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import type {
   AgentSessionFileActivity,
   AgentSessionSummary,
 } from "@/features/session-dashboard/lib/session-watch";
+import { indexWorkspaceGraph, queryKeys } from "@/shared/lib/agent-api";
 
 import { buildContextGraph } from "./buildContextGraph";
 import { layoutContextGraph } from "./layoutContextGraph";
-import type { ArchitectureGraph } from "./types";
-
-const MAX_CACHED_WORKSPACES = 8;
-type WorkspaceGraphCacheEntry = {
-  graph?: ArchitectureGraph;
-  promise?: Promise<ArchitectureGraph>;
-};
-const workspaceGraphCache = new Map<string, WorkspaceGraphCacheEntry>();
 
 export function useSessionContextGraph({
   fileActivity,
@@ -31,60 +24,14 @@ export function useSessionContextGraph({
   selectedSession: AgentSessionSummary | null;
 }) {
   const workspacePath = selectedSession?.cwd ?? null;
-  const [loadedArchitectureGraph, setLoadedArchitectureGraph] = useState<{
-    graph: ArchitectureGraph;
-    workspacePath: string;
-  } | null>(null);
-  const [indexError, setIndexError] = useState<{
-    message: string;
-    workspacePath: string;
-  } | null>(null);
-  const architectureGraph = workspacePath
-    ? loadedArchitectureGraph?.workspacePath === workspacePath
-      ? loadedArchitectureGraph.graph
-      : (workspaceGraphCache.get(workspacePath)?.graph ?? null)
-    : null;
-
-  useEffect(() => {
-    if (!workspacePath) {
-      return;
-    }
-    if (architectureGraph) {
-      const cached = workspaceGraphCache.get(workspacePath);
-      if (cached) {
-        touchWorkspaceGraphCache(workspacePath, cached);
-      }
-      return;
-    }
-
-    const currentWorkspacePath = workspacePath;
-    let disposed = false;
-
-    async function indexWorkspace() {
-      setIndexError(null);
-
-      try {
-        const graph = await loadWorkspaceGraph(currentWorkspacePath);
-
-        if (!disposed) {
-          setLoadedArchitectureGraph({ graph, workspacePath: currentWorkspacePath });
-        }
-      } catch (error) {
-        if (!disposed) {
-          setIndexError({
-            message: error instanceof Error ? error.message : String(error),
-            workspacePath: currentWorkspacePath,
-          });
-        }
-      }
-    }
-
-    void indexWorkspace();
-
-    return () => {
-      disposed = true;
-    };
-  }, [architectureGraph, workspacePath]);
+  const architectureQuery = useQuery({
+    queryKey: queryKeys.workspaceGraph(workspacePath ?? "none"),
+    queryFn: () => indexWorkspaceGraph(workspacePath ?? ""),
+    enabled: workspacePath !== null,
+    staleTime: 5 * 60_000,
+    gcTime: 5 * 60_000,
+  });
+  const architectureGraph = workspacePath ? (architectureQuery.data ?? null) : null;
 
   const { contextGraph, layoutErrorMessage } = useMemo(() => {
     const model = buildContextGraph({
@@ -118,45 +65,11 @@ export function useSessionContextGraph({
 
   return {
     contextGraph,
-    errorMessage:
-      indexError?.workspacePath === workspacePath ? indexError.message : layoutErrorMessage,
-    isLoading:
-      Boolean(workspacePath) && !architectureGraph && indexError?.workspacePath !== workspacePath,
+    errorMessage: architectureQuery.error
+      ? architectureQuery.error instanceof Error
+        ? architectureQuery.error.message
+        : String(architectureQuery.error)
+      : layoutErrorMessage,
+    isLoading: Boolean(workspacePath) && architectureQuery.isPending,
   };
-}
-
-function loadWorkspaceGraph(workspacePath: string) {
-  const cached = workspaceGraphCache.get(workspacePath);
-  if (cached?.graph) {
-    touchWorkspaceGraphCache(workspacePath, cached);
-    return Promise.resolve(cached.graph);
-  }
-  if (cached?.promise) {
-    return cached.promise;
-  }
-
-  const entry: WorkspaceGraphCacheEntry = {};
-  entry.promise = invoke<ArchitectureGraph>("index_workspace_graph", { workspacePath })
-    .then((graph) => {
-      entry.graph = graph;
-      entry.promise = undefined;
-      touchWorkspaceGraphCache(workspacePath, entry);
-      return graph;
-    })
-    .catch((error: unknown) => {
-      workspaceGraphCache.delete(workspacePath);
-      throw error;
-    });
-  workspaceGraphCache.set(workspacePath, entry);
-  return entry.promise;
-}
-
-function touchWorkspaceGraphCache(workspacePath: string, entry: WorkspaceGraphCacheEntry) {
-  workspaceGraphCache.delete(workspacePath);
-  workspaceGraphCache.set(workspacePath, entry);
-
-  const oldestWorkspacePath = workspaceGraphCache.keys().next().value;
-  if (workspaceGraphCache.size > MAX_CACHED_WORKSPACES && oldestWorkspacePath) {
-    workspaceGraphCache.delete(oldestWorkspacePath);
-  }
 }

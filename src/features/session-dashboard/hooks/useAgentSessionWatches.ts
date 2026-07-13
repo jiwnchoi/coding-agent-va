@@ -1,10 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
 import type {
   AgentRuntimeSource,
-  AgentSessionList,
   AgentSessionSummary,
   SessionWatchEventPayload,
   SessionWatchRegistration,
@@ -17,10 +17,6 @@ const EMPTY_WATCH_REGISTRATIONS: SessionWatchRegistration[] = [];
 type CurrentRef<T> = {
   current: T;
 };
-
-type ReconcileSessions = (nextSessions: AgentSessionSummary[]) => void;
-
-type SetFileActivityRefreshVersion = (update: (currentVersion: number) => number) => void;
 
 export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
   const [watchRegistrations, setWatchRegistrations] = useState<SessionWatchRegistration[]>([]);
@@ -85,12 +81,10 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
 
 export function useAgentSessionWatchRefresh(
   watchRegistrations: SessionWatchRegistration[],
-  reconcileSessions: ReconcileSessions,
   sessionsRef: CurrentRef<AgentSessionSummary[]>,
-  selectedSessionIdRef: CurrentRef<string>,
-  setFileActivityRefreshVersion: SetFileActivityRefreshVersion,
-  runtimeHomes: Record<string, string>
+  selectedSessionIdRef: CurrentRef<string>
 ) {
+  const queryClient = useQueryClient();
   useEffect(() => {
     if (watchRegistrations.length === 0) {
       return;
@@ -134,16 +128,16 @@ export function useAgentSessionWatchRefresh(
 
       try {
         if (shouldRefreshSessions) {
-          const result = await invoke<AgentSessionList>("list_agent_sessions", { runtimeHomes });
-          if (disposed) {
-            return;
-          }
-
-          reconcileSessions(result.sessions);
+          await queryClient.invalidateQueries({ queryKey: ["agent-sessions"] });
         }
 
         if (!disposed && shouldRefreshFileActivity) {
-          setFileActivityRefreshVersion((currentVersion) => currentVersion + 1);
+          const selectedSessionId = selectedSessionIdRef.current;
+          if (selectedSessionId) {
+            await queryClient.invalidateQueries({
+              queryKey: ["session-file-activity", selectedSessionId],
+            });
+          }
         }
       } finally {
         refreshInFlight = false;
@@ -188,14 +182,7 @@ export function useAgentSessionWatchRefresh(
       }
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [
-    reconcileSessions,
-    selectedSessionIdRef,
-    sessionsRef,
-    setFileActivityRefreshVersion,
-    runtimeHomes,
-    watchRegistrations,
-  ]);
+  }, [queryClient, selectedSessionIdRef, sessionsRef, watchRegistrations]);
 }
 
 function normalizeWatchPath(path: string) {

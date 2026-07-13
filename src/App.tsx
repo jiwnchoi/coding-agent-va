@@ -1,7 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
+import { useQuery } from "@tanstack/react-query";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   buildShortcuts,
@@ -19,8 +19,6 @@ import {
 } from "@/features/session-dashboard";
 import { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import {
-  type AgentRuntimeSource,
-  type AgentSessionList,
   type AgentSessionSummary,
   type SelectedActivityFile,
 } from "@/features/session-dashboard/lib/session-watch";
@@ -28,6 +26,7 @@ import { SettingsView, useAppSettings } from "@/features/settings";
 import { useEditorTheme } from "@/shared/hooks/useEditorTheme";
 import type { KeyboardShortcut } from "@/shared/hooks/useKeyboardShortcuts";
 import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
+import { listAgentSessions, queryKeys } from "@/shared/lib/agent-api";
 import { logger } from "@/shared/lib/logger";
 import { cn } from "@/shared/lib/utils";
 
@@ -36,7 +35,6 @@ import styles from "./App.module.css";
 function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const { settings, settingsError, updateSettings } = useAppSettings();
-  const [runtimeSources, setRuntimeSources] = useState<AgentRuntimeSource[]>([]);
   const {
     sessions,
     viewedSessionUpdatedAtMs,
@@ -52,15 +50,22 @@ function App() {
     markSelectedSessionAsViewed,
     reconcileSessions,
   } = useSessionState();
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [fileActivityRefreshVersion, setFileActivityRefreshVersion] = useState(0);
   const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
     null
   );
-  const watchRegistrations = useAgentSessionWatches(runtimeSources);
+  const sessionsQuery = useQuery({
+    queryKey: queryKeys.sessions(settings.runtimeHomes),
+    queryFn: () => listAgentSessions(settings.runtimeHomes),
+  });
+  const runtimeSources = sessionsQuery.data?.sources ?? [];
+  const isLoading = sessionsQuery.isPending;
+  const sessionById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions]
+  );
   const openSessions = openSessionIds
-    .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
+    .map((sessionId) => sessionById.get(sessionId) ?? null)
     .filter((session): session is AgentSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
@@ -118,29 +123,18 @@ function App() {
   const shortcuts = buildShortcuts(shortcutActions, settings.keyboardShortcuts);
 
   useEffect(() => {
-    let disposed = false;
-
-    async function loadSessions() {
-      try {
-        const result = await invoke<AgentSessionList>("list_agent_sessions", {
-          runtimeHomes: settings.runtimeHomes,
-        });
-        if (disposed) return;
-        void logger.info("Loaded agent sessions", { count: String(result.sessions.length) });
-        setRuntimeSources(result.sources);
-        reconcileSessions(result.sessions);
-        setIsLoading(false);
-      } catch (error) {
-        void logger.error("Failed to load agent sessions", { error: String(error) });
-      }
+    if (sessionsQuery.data) {
+      void logger.info("Loaded agent sessions", {
+        count: String(sessionsQuery.data.sessions.length),
+      });
+      reconcileSessions(sessionsQuery.data.sessions);
     }
+    if (sessionsQuery.error) {
+      void logger.error("Failed to load agent sessions", { error: String(sessionsQuery.error) });
+    }
+  }, [reconcileSessions, sessionsQuery.data, sessionsQuery.error]);
 
-    void loadSessions();
-
-    return () => {
-      disposed = true;
-    };
-  }, [reconcileSessions, settings.runtimeHomes]);
+  const watchRegistrations = useAgentSessionWatches(runtimeSources);
 
   useEffect(() => {
     let disposed = false;
@@ -180,14 +174,7 @@ function App() {
     };
   }, [markSelectedSessionAsViewed]);
 
-  useAgentSessionWatchRefresh(
-    watchRegistrations,
-    reconcileSessions,
-    sessionsRef,
-    selectedSessionIdRef,
-    setFileActivityRefreshVersion,
-    settings.runtimeHomes
-  );
+  useAgentSessionWatchRefresh(watchRegistrations, sessionsRef, selectedSessionIdRef);
 
   useKeyboardShortcuts(shortcuts);
 
@@ -264,7 +251,6 @@ function App() {
                   <SessionContextGraphTab
                     key={selectedSession.id}
                     descriptionSettings={settings.descriptions}
-                    fileActivityRefreshVersion={fileActivityRefreshVersion}
                     hideCommittedFiles={settings.hideCommittedFiles}
                     isSessionListLoading={isLoading}
                     selectedActivityFile={selectedActivityFile}

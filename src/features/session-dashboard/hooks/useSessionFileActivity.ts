@@ -1,10 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import type {
   AgentSessionFileActivity,
   AgentSessionSummary,
 } from "@/features/session-dashboard/lib/session-watch";
+import { getAgentSessionFileActivity, queryKeys } from "@/shared/lib/agent-api";
 
 const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
   readFiles: [],
@@ -16,77 +16,23 @@ const EMPTY_FILE_ACTIVITY: AgentSessionFileActivity = {
 
 export function useSessionFileActivity(
   selectedSession: AgentSessionSummary | null,
-  fileActivityRefreshVersion: number,
   hideCommittedFiles: boolean
 ) {
-  const [loadedFileActivity, setLoadedFileActivity] =
-    useState<AgentSessionFileActivity>(EMPTY_FILE_ACTIVITY);
-  const [isFileActivityLoading, setIsFileActivityLoading] = useState(false);
-
-  useEffect(() => {
-    if (!selectedSession) {
-      return;
-    }
-
-    const currentSession = selectedSession;
-    let disposed = false;
-
-    async function loadFileActivity() {
-      setIsFileActivityLoading(true);
-
-      try {
-        const result = await invoke<AgentSessionFileActivity>("get_agent_session_file_activity", {
-          provider: currentSession.provider,
-          transcriptPath: currentSession.transcriptPath,
-          cwd: currentSession.cwd,
-          hideCommittedFiles,
-        });
-
-        if (!disposed) {
-          setLoadedFileActivity((current) =>
-            areFileActivitiesEqual(current, result) ? current : result
-          );
-        }
-      } finally {
-        if (!disposed) {
-          setIsFileActivityLoading(false);
-        }
-      }
-    }
-
-    void loadFileActivity();
-
-    return () => {
-      disposed = true;
-    };
-  }, [fileActivityRefreshVersion, hideCommittedFiles, selectedSession]);
-
-  const fileActivity = selectedSession ? loadedFileActivity : EMPTY_FILE_ACTIVITY;
+  const query = useQuery({
+    queryKey: queryKeys.fileActivity(selectedSession?.id ?? "none", hideCommittedFiles),
+    queryFn: () =>
+      getAgentSessionFileActivity({
+        provider: selectedSession?.provider ?? "",
+        transcriptPath: selectedSession?.transcriptPath ?? "",
+        cwd: selectedSession?.cwd ?? null,
+        hideCommittedFiles,
+      }),
+    enabled: selectedSession !== null,
+  });
 
   return {
-    fileActivity,
-    isFileActivityLoading: selectedSession ? isFileActivityLoading : false,
+    fileActivity: selectedSession ? (query.data ?? EMPTY_FILE_ACTIVITY) : EMPTY_FILE_ACTIVITY,
+    isFileActivityLoading: selectedSession ? query.isPending || query.isFetching : false,
+    fileActivityErrorMessage: selectedSession && query.error ? String(query.error) : "",
   };
-}
-
-function areFileActivitiesEqual(left: AgentSessionFileActivity, right: AgentSessionFileActivity) {
-  return (
-    areStringArraysEqual(left.readFiles, right.readFiles) &&
-    areStringArraysEqual(left.editedFiles, right.editedFiles) &&
-    areStringArraysEqual(left.impactedFiles, right.impactedFiles) &&
-    areStringArraysEqual(left.deletedFiles, right.deletedFiles) &&
-    left.impactedRelations.length === right.impactedRelations.length &&
-    left.impactedRelations.every((relation, index) => {
-      const other = right.impactedRelations[index];
-      return (
-        relation.changedFile === other?.changedFile &&
-        relation.impactedFile === other.impactedFile &&
-        relation.importSpecifier === other.importSpecifier
-      );
-    })
-  );
-}
-
-function areStringArraysEqual(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }

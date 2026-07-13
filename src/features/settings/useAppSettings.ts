@@ -1,6 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { loadAppSettings, saveAppSettings } from "@/shared/lib/agent-api";
 import type { AppFont, AppSettings, AppTheme, MonacoTheme } from "@/shared/lib/generated/bindings";
 import { logger } from "@/shared/lib/logger";
 
@@ -34,54 +35,58 @@ function applyFont(font: AppFont) {
 
 export function useAppSettings() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsError, setSettingsError] = useState("");
+  const settingsQuery = useQuery({
+    queryKey: ["app-settings"],
+    queryFn: loadAppSettings,
+    staleTime: Infinity,
+    refetchOnMount: false,
+  });
+  const saveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
-    let disposed = false;
-
-    async function loadSettings() {
-      try {
-        const loadedSettings = await invoke<AppSettings>("load_app_settings");
-        if (!disposed) {
-          setSettings(loadedSettings);
-          setSettingsLoaded(true);
-          setSettingsError("");
-          void logger.info("Loaded application settings");
-        }
-      } catch (error) {
-        if (!disposed) {
-          setSettingsError(error instanceof Error ? error.message : String(error));
-        }
-        void logger.error("Failed to load application settings", { error: String(error) });
-      }
+    if (settingsQuery.data) {
+      setSettings(settingsQuery.data);
+      setSettingsError("");
+      void logger.info("Loaded application settings");
     }
-
-    void loadSettings();
-    return () => {
-      disposed = true;
-    };
-  }, []);
+    if (settingsQuery.error) {
+      setSettingsError(String(settingsQuery.error));
+      void logger.error("Failed to load application settings", {
+        error: String(settingsQuery.error),
+      });
+    }
+  }, [settingsQuery.data, settingsQuery.error]);
 
   useEffect(() => {
     applyTheme(settings.theme);
     applyFont(settings.font);
 
-    if (!settingsLoaded) return;
+    if (!settingsQuery.data) return;
+    let disposed = false;
     const timeoutId = window.setTimeout(() => {
-      void invoke("save_app_settings", { settings })
+      saveChainRef.current = saveChainRef.current
+        .catch(() => undefined)
+        .then(() => saveAppSettings(settings))
         .then(() => {
-          setSettingsError("");
-          void logger.debug("Saved application settings");
+          if (!disposed) {
+            setSettingsError("");
+            void logger.debug("Saved application settings");
+          }
         })
         .catch((error) => {
-          setSettingsError(error instanceof Error ? error.message : String(error));
-          void logger.error("Failed to save application settings", { error: String(error) });
+          if (!disposed) {
+            setSettingsError(error instanceof Error ? error.message : String(error));
+            void logger.error("Failed to save application settings", { error: String(error) });
+          }
         });
     }, 150);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [settings, settingsLoaded]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [settings, settingsQuery.data]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

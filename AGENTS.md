@@ -25,4 +25,3 @@
 ## Language Guideline
 
 - Source codes should be in English, But documents can be Korean.
-

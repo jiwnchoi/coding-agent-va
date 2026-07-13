@@ -1,12 +1,12 @@
 import type { ActivitySectionKey } from "@/features/session-dashboard/lib/session-watch";
 
+import { getArchitectureGraphIndex } from "./architectureGraphIndex";
 import { buildActivityByPath, buildChildActivityCounts } from "./contextGraphActivity";
 import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
 import styles from "./ContextGraphView.module.css";
 import { collectVisibleNodeIds, isVisibleGraphNode } from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
-  ArchitectureGraph,
   ArchitectureNode,
   ContextGraphBuildOptions,
   ContextGraphEdge,
@@ -16,15 +16,6 @@ import type {
 } from "./types";
 
 const CONTEXT_NODE_TYPE = "contextGraphNode" as const;
-type ArchitectureGraphIndex = {
-  containsEdges: ArchitectureEdge[];
-  fileNodeIdByPathKey: Map<string, string>;
-  nodeById: Map<string, ArchitectureNode>;
-  parentByChildId: Map<string, string>;
-  visibleNodes: ArchitectureNode[];
-  workspacePath: string;
-};
-const architectureGraphIndexes = new WeakMap<ArchitectureGraph, ArchitectureGraphIndex>();
 
 export function buildContextGraph(options: ContextGraphBuildOptions): ContextGraphModel {
   const architectureGraph = options.architectureGraph;
@@ -48,6 +39,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   const pinnedFilePaths = options.pinnedFilePaths.map((filePath) =>
     normalizeWorkspacePath(filePath, workspacePath)
   );
+  const pinnedFilePathSet = new Set(pinnedFilePaths);
   const activeFilePaths = new Set([
     ...activityByPath.keys(),
     ...pinnedFilePaths,
@@ -88,7 +80,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
         activities: activityByPath.get(displayPathForNode(node, workspacePath)) ?? [],
         childActivityCount: childActivityCountByNodeId.get(node.id) ?? 0,
         hasDirectFiles: directoriesWithVisibleFiles.has(node.id),
-        isPinned: pinnedFilePaths.includes(displayPathForNode(node, workspacePath)),
+        isPinned: pinnedFilePathSet.has(displayPathForNode(node, workspacePath)),
         isSelected: selectedFilePath === displayPathForNode(node, workspacePath),
         node,
         workspacePath,
@@ -164,38 +156,6 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   };
 }
 
-function getArchitectureGraphIndex(architectureGraph: ArchitectureGraph, workspacePath: string) {
-  const cached = architectureGraphIndexes.get(architectureGraph);
-  if (cached?.workspacePath === workspacePath) {
-    return cached;
-  }
-
-  const containsEdges = architectureGraph.edges.filter((edge) => edge.kind === "contains");
-  const fileNodeIdByPathKey = new Map<string, string>();
-  const nodeById = new Map(architectureGraph.nodes.map((node) => [node.id, node]));
-  const parentByChildId = new Map(containsEdges.map((edge) => [edge.target, edge.source]));
-  const visibleNodes = architectureGraph.nodes.filter(isVisibleGraphNode);
-
-  for (const node of visibleNodes) {
-    if (node.kind !== "file" || !node.path) {
-      continue;
-    }
-    fileNodeIdByPathKey.set(displayPathForNode(node, workspacePath), node.id);
-    fileNodeIdByPathKey.set(normalizeWorkspacePath(node.path, workspacePath), node.id);
-  }
-
-  const index = {
-    containsEdges,
-    fileNodeIdByPathKey,
-    nodeById,
-    parentByChildId,
-    visibleNodes,
-    workspacePath,
-  };
-  architectureGraphIndexes.set(architectureGraph, index);
-  return index;
-}
-
 function pruneEmptyDirectories(
   nodes: ContextGraphNode[],
   edges: ContextGraphEdge[]
@@ -257,7 +217,12 @@ function toContextGraphNode({
     id: node.id,
     position: { x: 0, y: 0 },
     type: CONTEXT_NODE_TYPE,
-    className: isSelected ? styles.selectedNode : undefined,
+    className:
+      node.kind === "directory"
+        ? styles.directoryNodeWrapper
+        : isSelected
+          ? styles.selectedNode
+          : undefined,
     data: {
       activities,
       childActivityCount,
@@ -365,10 +330,7 @@ function toContainsEdge(edge: ArchitectureEdge): ContextGraphEdge {
     source: edge.source,
     target: edge.target,
     className: styles.containsEdge,
-    data: {
-      kind: "contains",
-      isHighlighted: false,
-    },
+    data: { kind: "contains", isHighlighted: false },
     type: "contextGraphContainsEdge",
   };
 }

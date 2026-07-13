@@ -9,7 +9,6 @@ import { SessionContextGraphView } from "./SessionContextGraphView";
 
 export function SessionContextGraphTab({
   descriptionSettings,
-  fileActivityRefreshVersion,
   hideCommittedFiles,
   isSessionListLoading,
   selectedActivityFile,
@@ -17,7 +16,6 @@ export function SessionContextGraphTab({
   onSelectFile,
 }: {
   descriptionSettings: DescriptionSettings;
-  fileActivityRefreshVersion: number;
   hideCommittedFiles: boolean;
   isSessionListLoading: boolean;
   selectedActivityFile: SelectedActivityFile | null;
@@ -26,7 +24,6 @@ export function SessionContextGraphTab({
 }) {
   const { fileActivity, isFileActivityLoading } = useSessionFileActivity(
     selectedSession,
-    fileActivityRefreshVersion,
     hideCommittedFiles
   );
 
