@@ -43,7 +43,9 @@ export function useSessionFileActivity(
         });
 
         if (!disposed) {
-          setLoadedFileActivity(result);
+          setLoadedFileActivity((current) =>
+            areFileActivitiesEqual(current, result) ? current : result
+          );
         }
       } finally {
         if (!disposed) {
@@ -65,4 +67,26 @@ export function useSessionFileActivity(
     fileActivity,
     isFileActivityLoading: selectedSession ? isFileActivityLoading : false,
   };
+}
+
+function areFileActivitiesEqual(left: AgentSessionFileActivity, right: AgentSessionFileActivity) {
+  return (
+    areStringArraysEqual(left.readFiles, right.readFiles) &&
+    areStringArraysEqual(left.editedFiles, right.editedFiles) &&
+    areStringArraysEqual(left.impactedFiles, right.impactedFiles) &&
+    areStringArraysEqual(left.deletedFiles, right.deletedFiles) &&
+    left.impactedRelations.length === right.impactedRelations.length &&
+    left.impactedRelations.every((relation, index) => {
+      const other = right.impactedRelations[index];
+      return (
+        relation.changedFile === other?.changedFile &&
+        relation.impactedFile === other.impactedFile &&
+        relation.importSpecifier === other.importSpecifier
+      );
+    })
+  );
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }

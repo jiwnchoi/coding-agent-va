@@ -9,6 +9,7 @@ import type {
   SessionWatchEventPayload,
   SessionWatchRegistration,
 } from "@/features/session-dashboard/lib/session-watch";
+import { logger } from "@/shared/lib/logger";
 
 const WATCH_REFRESH_DEBOUNCE_MS = 750;
 const EMPTY_WATCH_REGISTRATIONS: SessionWatchRegistration[] = [];
@@ -54,6 +55,10 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
 
           activeWatchIds.push(result.value.watchId);
           registrations.push(result.value);
+        } else {
+          void logger.error("Failed to start agent session watcher", {
+            error: String(result.reason),
+          });
         }
       }
 

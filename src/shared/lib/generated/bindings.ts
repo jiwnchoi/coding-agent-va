@@ -8,6 +8,16 @@ export type MonacoTheme = "system" | "light" | "dark";
 
 export type RuntimeHomes = { claude: string; codex: string; pi: string };
 
+export type DescriptionReasoning = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export type DescriptionProviderSettings = { model: string; reasoning: DescriptionReasoning };
+
+export type DescriptionSettings = {
+  codex: DescriptionProviderSettings;
+  claude: DescriptionProviderSettings;
+  pi: DescriptionProviderSettings;
+};
+
 export type AppSettings = {
   theme: AppTheme;
   font: AppFont;
@@ -15,6 +25,16 @@ export type AppSettings = {
   hideCommittedFiles: boolean;
   keyboardShortcuts: { [key in string]: string };
   runtimeHomes: RuntimeHomes;
+  descriptions: DescriptionSettings;
+};
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export type LogEntry = {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  context: { [key in string]: string } | null;
 };
 
 export type AgentSessionProvider = "codex" | "claude" | "pi";
@@ -99,6 +119,33 @@ export type AgentSessionFileDiff = {
   fileMissing: boolean;
   isTracked: boolean;
 };
+
+export type DescriptionGraphNode = { label: string; path: string; activities: Array<string> };
+
+export type DescriptionGraphRelation = {
+  sourcePath: string;
+  targetPath: string;
+  importSpecifier: string;
+};
+
+export type AgentSessionNodeDescriptionRequest = {
+  provider: AgentSessionProvider;
+  providerSessionId: string;
+  transcriptPath: string;
+  runtimeHome: string;
+  model: string;
+  reasoning: DescriptionReasoning;
+  cwd: string;
+  clickedNode: DescriptionGraphNode;
+  relatedNodes: Array<DescriptionGraphNode>;
+  relations: Array<DescriptionGraphRelation>;
+};
+
+export type AgentSessionNodeDescriptionResponse = { description: string; providerLabel: string };
+
+export type AgentSessionNodeDescriptionStreamEvent =
+  | { type: "started"; providerLabel: string; cached: boolean }
+  | { type: "chunk"; text: string };
 
 export type NodeKind = "repo" | "directory" | "file" | "symbol" | "external";
 

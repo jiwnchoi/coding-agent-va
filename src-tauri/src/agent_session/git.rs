@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use rayon::prelude::*;
+
 use super::file_system::file_updated_at_ms;
 use super::paths::normalize_absolute_activity_path;
 use super::types::{AgentSessionFileDiff, AgentSessionSummary};
@@ -39,9 +41,14 @@ pub(crate) fn read_git_worktree_status(
         return None;
     }
 
+    let repo_statuses = relative_paths_by_repo_root
+        .into_par_iter()
+        .map(|(repo_root, relative_paths)| {
+            read_git_status_for_paths(&repo_root, relative_paths).map(|output| (repo_root, output))
+        })
+        .collect::<Option<Vec<_>>>()?;
     let mut status = GitWorktreeStatus::default();
-    for (repo_root, relative_paths) in relative_paths_by_repo_root {
-        let output = read_git_status_for_paths(&repo_root, relative_paths)?;
+    for (repo_root, output) in repo_statuses {
         append_git_status_entries(&mut status, &repo_root, &output.stdout);
     }
 
@@ -152,8 +159,6 @@ pub(crate) fn collect_git_index_paths_from_sessions(
     sessions: &[AgentSessionSummary],
 ) -> Vec<PathBuf> {
     let mut cwd_paths = BTreeSet::<PathBuf>::new();
-    let mut repo_roots = BTreeSet::<PathBuf>::new();
-
     for session in sessions {
         let Some(cwd) = &session.cwd else {
             continue;
@@ -162,16 +167,13 @@ pub(crate) fn collect_git_index_paths_from_sessions(
         cwd_paths.insert(PathBuf::from(cwd));
     }
 
-    for cwd in cwd_paths {
-        let Some(repo_root) = resolve_git_repo_root_from_path(&cwd) else {
-            continue;
-        };
-
-        repo_roots.insert(repo_root);
-    }
-
-    repo_roots
+    cwd_paths
+        .into_par_iter()
+        .filter_map(|cwd| resolve_git_repo_root_from_path(&cwd))
+        .collect::<BTreeSet<_>>()
         .into_iter()
+        .collect::<Vec<_>>()
+        .into_par_iter()
         .map(|repo_root| {
             resolve_git_index_path(&repo_root).unwrap_or_else(|| repo_root.join(".git/index"))
         })

@@ -2,20 +2,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{AppHandle, State};
+use rayon::prelude::*;
+use tauri::{ipc::Channel, AppHandle, State};
 use watchexec::Watchexec;
+
+use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
     create_watch_plan_cached, invalidate_watch_caches, list_sessions_cached,
     read_file_activity_cached,
 };
+use super::description::{describe_session_node, NodeDescriptionCacheState};
 use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
-    AgentSessionFileActivity, AgentSessionFileDiff, AgentSessionList, AgentSessionProvider,
-    SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration,
+    AgentSessionFileActivity, AgentSessionFileDiff, AgentSessionList,
+    AgentSessionNodeDescriptionRequest, AgentSessionNodeDescriptionResponse,
+    AgentSessionNodeDescriptionStreamEvent, AgentSessionProvider, SessionWatchEventPayload,
+    SessionWatchPlan, SessionWatchRegistration,
 };
 use super::watch::{
     emit_session_watch_event, is_relevant_watch_path, normalize_watch_event_path,
@@ -23,64 +29,108 @@ use super::watch::{
 };
 
 #[tauri::command]
-pub fn list_agent_sessions(
-    state: State<'_, AgentSessionWatchState>,
-    runtime_homes: Option<BTreeMap<String, String>>,
-) -> Result<AgentSessionList, String> {
-    let sources = default_runtime_sources(runtime_homes.as_ref());
-    let mut sessions = Vec::new();
-
-    for source in &sources {
-        if !source.available {
-            continue;
-        }
-
-        let protocol = source.provider.protocol();
-        sessions.extend(list_sessions_cached(
-            &state,
-            protocol.as_ref(),
-            &PathBuf::from(&source.runtime_home),
-        )?);
-    }
-
-    sessions.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
-
-    Ok(AgentSessionList { sources, sessions })
+pub async fn describe_agent_session_node(
+    request: AgentSessionNodeDescriptionRequest,
+    cache: State<'_, NodeDescriptionCacheState>,
+    on_event: Channel<AgentSessionNodeDescriptionStreamEvent>,
+) -> Result<AgentSessionNodeDescriptionResponse, String> {
+    let cache = cache.inner().clone();
+    run_blocking("session description", move || {
+        describe_session_node(request, &cache, |event| {
+            on_event
+                .send(event)
+                .map_err(|error| format!("failed to stream description: {error}"))
+        })
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn plan_agent_session_watch(
+pub async fn list_agent_sessions(
+    state: State<'_, AgentSessionWatchState>,
+    runtime_homes: Option<BTreeMap<String, String>>,
+) -> Result<AgentSessionList, String> {
+    let state = state.inner().clone();
+    run_blocking("session listing", move || {
+        let sources = default_runtime_sources(runtime_homes.as_ref());
+        let session_batches = sources
+            .par_iter()
+            .filter(|source| source.available)
+            .map(|source| {
+                let protocol = source.provider.protocol();
+                list_sessions_cached(
+                    &state,
+                    protocol.as_ref(),
+                    &PathBuf::from(&source.runtime_home),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut sessions = session_batches.into_iter().flatten().collect::<Vec<_>>();
+        sessions.sort_by(|left, right| {
+            right
+                .updated_at_ms
+                .cmp(&left.updated_at_ms)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+
+        let _ = Logger::log(
+            LogLevel::Info,
+            "Listed agent sessions",
+            Some(BTreeMap::from([(
+                "count".to_string(),
+                sessions.len().to_string(),
+            )])),
+        );
+
+        Ok(AgentSessionList { sources, sessions })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn plan_agent_session_watch(
     state: State<'_, AgentSessionWatchState>,
     provider: AgentSessionProvider,
     runtime_home: String,
 ) -> Result<SessionWatchPlan, String> {
-    let protocol = provider.protocol();
-    create_watch_plan_cached(&state, protocol.as_ref(), &PathBuf::from(runtime_home))
+    let state = state.inner().clone();
+    run_blocking("session watch planning", move || {
+        let protocol = provider.protocol();
+        create_watch_plan_cached(&state, protocol.as_ref(), &PathBuf::from(runtime_home))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_agent_session_file_activity(
+pub async fn get_agent_session_file_activity(
     state: State<'_, AgentSessionWatchState>,
     provider: AgentSessionProvider,
     transcript_path: String,
     cwd: Option<String>,
     hide_committed_files: bool,
 ) -> Result<AgentSessionFileActivity, String> {
-    read_file_activity_cached(
-        &state,
-        provider,
-        &PathBuf::from(transcript_path),
-        cwd.as_deref(),
-        hide_committed_files,
-    )
+    let state = state.inner().clone();
+    run_blocking("session file activity", move || {
+        read_file_activity_cached(
+            &state,
+            provider,
+            &PathBuf::from(transcript_path),
+            cwd.as_deref(),
+            hide_committed_files,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_agent_session_file_diff(
+pub async fn get_agent_session_file_diff(
     file_path: String,
     cwd: Option<String>,
 ) -> Result<AgentSessionFileDiff, String> {
-    read_agent_session_file_diff(&PathBuf::from(file_path), cwd.as_deref())
+    run_blocking("session file diff", move || {
+        read_agent_session_file_diff(&PathBuf::from(file_path), cwd.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -90,9 +140,29 @@ pub async fn start_agent_session_watch(
     provider: AgentSessionProvider,
     runtime_home: String,
 ) -> Result<SessionWatchRegistration, String> {
-    let protocol = provider.protocol();
-    let plan = create_watch_plan_cached(&state, protocol.as_ref(), &PathBuf::from(runtime_home))?;
+    let state = state.inner().clone();
+    let state_for_plan = state.clone();
+    let plan = run_blocking("session watch startup", move || {
+        let protocol = provider.protocol();
+        create_watch_plan_cached(
+            &state_for_plan,
+            protocol.as_ref(),
+            &PathBuf::from(runtime_home),
+        )
+    })
+    .await?;
     let watch_id = plan.watch_id.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        Logger::log(
+            LogLevel::Info,
+            "Started agent session watcher",
+            Some(BTreeMap::from([(
+                "provider".to_string(),
+                format!("{provider:?}"),
+            )])),
+        )
+    })
+    .await;
     let runtime_home_path = PathBuf::from(&plan.runtime_home);
     let git_index_paths = plan
         .git_index_paths
@@ -182,6 +252,19 @@ pub async fn start_agent_session_watch(
     let watch_id_for_runtime_error = watch_id.clone();
     let watch_task = tauri::async_runtime::spawn(async move {
         if let Err(error) = wx.main().await {
+            let error_message = error.to_string();
+            let error_message_for_log = error_message.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                Logger::log(
+                    LogLevel::Error,
+                    "Agent session watcher failed",
+                    Some(BTreeMap::from([(
+                        "error".to_string(),
+                        error_message_for_log,
+                    )])),
+                )
+            })
+            .await;
             emit_session_watch_event(
                 &app,
                 SessionWatchEventPayload {
@@ -189,7 +272,7 @@ pub async fn start_agent_session_watch(
                     provider,
                     runtime_home: runtime_home_path.display().to_string(),
                     changed_paths: Vec::new(),
-                    event_tags: vec![format!("watch_error:{error}")],
+                    event_tags: vec![format!("watch_error:{error_message}")],
                     timestamp_ms: now_timestamp_ms(),
                 },
             );
@@ -234,5 +317,17 @@ pub fn stop_agent_session_watch(
 pub fn manage_agent_session_watch_state(
     builder: tauri::Builder<tauri::Wry>,
 ) -> tauri::Builder<tauri::Wry> {
-    builder.manage(AgentSessionWatchState::default())
+    builder
+        .manage(AgentSessionWatchState::default())
+        .manage(NodeDescriptionCacheState::default())
+}
+
+async fn run_blocking<T, F>(task_name: &'static str, task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("{task_name} task failed: {error}"))?
 }

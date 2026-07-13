@@ -29,6 +29,23 @@ Shared behavior stays outside provider implementations:
 - impacted-file discovery through the workspace dependency indexer
 - activity sorting and read-vs-edit deduplication
 
+Session discovery runs provider and transcript scans in parallel through Rayon. Filesystem, Git,
+dependency-indexing, and transcript work invoked through Tauri commands runs on Tokio's blocking
+pool; watcher event coordination remains on the asynchronous Tokio runtime.
+
+## Node Descriptions
+
+Codex node descriptions call the Codex Responses endpoint directly instead of spawning the Codex
+CLI. The request replays model-visible `response_item` records from the selected rollout, honors
+replacement history from compaction and thread rollback events, then appends the node-description
+prompt as a new user message. Authentication is loaded from the selected Codex runtime home's
+`auth.json`; expiring OAuth tokens are refreshed and written back to that file.
+Requests also reuse the Codex client version from `models_cache.json` for the Codex `originator`
+and `User-Agent` headers required by account-scoped model routing.
+
+Claude Code and Pi descriptions continue to run through their CLIs with temporary or forked
+sessions so description generation does not modify the selected source session.
+
 ## Adding a Provider
 
 1. Add a variant to `AgentSessionProvider`.

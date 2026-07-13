@@ -1,11 +1,12 @@
 use super::graph::{ArchitectureEdge, ArchitectureGraph, ArchitectureNode, EdgeKind, NodeKind};
-use super::import_extractor::extract_imports;
+use super::import_extractor::{extract_imports, ExtractedImport};
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
-use super::symbol_extractor::extract_symbols;
+use super::symbol_extractor::{extract_symbols, ExtractedSymbol};
+use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub struct WorkspaceIndexer;
@@ -52,12 +53,21 @@ impl WorkspaceIndexer {
             },
         );
 
-        for entry in WalkDir::new(&workspace_path)
+        let entries = WalkDir::new(&workspace_path)
             .into_iter()
             .filter_entry(|entry| !is_ignored(entry.path()))
             .filter_map(Result::ok)
-        {
-            let path = entry.path();
+            .filter(|entry| entry.path() != workspace_path)
+            .map(|entry| entry.into_path())
+            .collect::<Vec<_>>();
+        let indexed_files = entries
+            .par_iter()
+            .filter(|path| path.is_file())
+            .filter_map(|path| index_file(path))
+            .collect::<HashMap<_, _>>();
+
+        for path in entries {
+            let path = path.as_path();
             if path == workspace_path {
                 continue;
             }
@@ -101,14 +111,15 @@ impl WorkspaceIndexer {
                 );
             }
 
-            if path.is_file() {
-                index_file(
+            if let Some(indexed_file) = indexed_files.get(path) {
+                merge_indexed_file(
                     &mut graph,
                     &mut seen_nodes,
                     &mut seen_edges,
                     &mut external_nodes,
                     path,
                     &node_id_value,
+                    indexed_file,
                 );
             }
         }
@@ -117,30 +128,44 @@ impl WorkspaceIndexer {
     }
 }
 
-fn index_file(
+struct IndexedFile {
+    language: SupportedLanguage,
+    symbols: Vec<ExtractedSymbol>,
+    imports: Vec<ExtractedImport>,
+}
+
+fn index_file(path: &Path) -> Option<(PathBuf, IndexedFile)> {
+    let language = detect_language(path)?;
+    let source = fs::read_to_string(path).ok()?;
+    let tree = parse_source(language, &source).ok()?;
+    let root = tree.root_node();
+
+    Some((
+        path.to_path_buf(),
+        IndexedFile {
+            language,
+            symbols: extract_symbols(language, &source, root),
+            imports: extract_imports(language, &source, root),
+        },
+    ))
+}
+
+fn merge_indexed_file(
     graph: &mut ArchitectureGraph,
     seen_nodes: &mut HashSet<String>,
     seen_edges: &mut HashSet<String>,
     external_nodes: &mut HashMap<String, String>,
     path: &Path,
     file_node_id: &str,
+    indexed_file: &IndexedFile,
 ) {
-    let Some(language) = detect_language(path) else {
-        return;
-    };
-
-    let Ok(source) = fs::read_to_string(path) else {
-        return;
-    };
-    let Ok(tree) = parse_source(language, &source) else {
-        return;
-    };
-    let root = tree.root_node();
-
-    for symbol in extract_symbols(language, &source, root) {
+    for symbol in &indexed_file.symbols {
         let symbol_node_id = format!("{file_node_id}#symbol:{}", symbol.name);
         let mut metadata = BTreeMap::new();
-        metadata.insert("language".to_string(), language.as_str().to_string());
+        metadata.insert(
+            "language".to_string(),
+            indexed_file.language.as_str().to_string(),
+        );
         metadata.insert("symbol_kind".to_string(), symbol.kind.clone());
 
         push_node(
@@ -149,7 +174,7 @@ fn index_file(
             ArchitectureNode {
                 id: symbol_node_id.clone(),
                 kind: NodeKind::Symbol,
-                label: symbol.name,
+                label: symbol.name.clone(),
                 path: Some(path.display().to_string()),
                 metadata,
             },
@@ -168,7 +193,7 @@ fn index_file(
         );
     }
 
-    for import in extract_imports(language, &source, root) {
+    for import in &indexed_file.imports {
         let external_node_id = external_nodes
             .entry(import.specifier.clone())
             .or_insert_with(|| format!("external:{}", import.specifier))
@@ -204,7 +229,7 @@ fn index_file(
                 kind: EdgeKind::Imports,
                 source: file_node_id.to_string(),
                 target: external_node_id,
-                label: Some(import.specifier),
+                label: Some(import.specifier.clone()),
             },
         );
     }

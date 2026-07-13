@@ -23,6 +23,13 @@
 - `graph.rs`
   - Defines the serializable graph payload returned over Tauri IPC.
 
+## Concurrency model
+
+- Tauri commands move repository scans and parsing onto Tokio's blocking pool so CPU and filesystem work does not occupy async runtime workers.
+- Rayon parses supported source files in parallel, with one independent `tree-sitter` parser per file.
+- Per-file results are merged after parallel parsing so graph construction stays lock-free and deterministic.
+- Workspace dependency indexing uses the same parallel file-analysis model before performing its deterministic impact traversal.
+
 ## Supported languages
 
 Current parser coverage includes:

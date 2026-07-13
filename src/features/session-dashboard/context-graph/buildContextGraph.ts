@@ -6,6 +6,7 @@ import styles from "./ContextGraphView.module.css";
 import { collectVisibleNodeIds, isVisibleGraphNode } from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
+  ArchitectureGraph,
   ArchitectureNode,
   ContextGraphBuildOptions,
   ContextGraphEdge,
@@ -15,9 +16,15 @@ import type {
 } from "./types";
 
 const CONTEXT_NODE_TYPE = "contextGraphNode" as const;
-const IMPACT_EDGE_COLOR = "#ff7f0e";
-const UNREAD_IMPACT_EDGE_COLOR = "#d62728";
-const IMPACT_EDGE_MARKER_SIZE = 8;
+type ArchitectureGraphIndex = {
+  containsEdges: ArchitectureEdge[];
+  fileNodeIdByPathKey: Map<string, string>;
+  nodeById: Map<string, ArchitectureNode>;
+  parentByChildId: Map<string, string>;
+  visibleNodes: ArchitectureNode[];
+  workspacePath: string;
+};
+const architectureGraphIndexes = new WeakMap<ArchitectureGraph, ArchitectureGraphIndex>();
 
 export function buildContextGraph(options: ContextGraphBuildOptions): ContextGraphModel {
   const architectureGraph = options.architectureGraph;
@@ -33,8 +40,9 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   }
 
   const workspacePath = options.workspacePath;
-  const nodeById = new Map(architectureGraph.nodes.map((node) => [node.id, node]));
-  const fileNodeIdByPathKey = new Map<string, string>();
+  const architectureIndex = getArchitectureGraphIndex(architectureGraph, workspacePath);
+  const { containsEdges, fileNodeIdByPathKey, nodeById, parentByChildId, visibleNodes } =
+    architectureIndex;
   const activityByPath = buildActivityByPath(options.fileActivity, workspacePath);
   const selectedFilePath = normalizeWorkspacePath(options.selectedFilePath, workspacePath);
   const pinnedFilePaths = options.pinnedFilePaths.map((filePath) =>
@@ -49,25 +57,16 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     ]),
   ]);
 
-  for (const node of architectureGraph.nodes) {
-    if (node.kind !== "file" || !node.path) {
-      continue;
-    }
-
-    fileNodeIdByPathKey.set(displayPathForNode(node, workspacePath), node.id);
-    fileNodeIdByPathKey.set(normalizeWorkspacePath(node.path, workspacePath), node.id);
-  }
-
   const visibleNodeIds = collectVisibleNodeIds({
     activeFilePaths,
     architectureGraph,
     fileNodeIdByPathKey,
     includeEntireWorkspace: options.includeEntireWorkspace,
+    parentByChildId,
   });
 
   const directoriesWithVisibleFiles = new Set(
-    architectureGraph.edges
-      .filter((edge) => edge.kind === "contains")
+    containsEdges
       .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
       .filter((edge) => nodeById.get(edge.source)?.kind === "directory")
       .filter((edge) => nodeById.get(edge.target)?.kind === "file")
@@ -75,15 +74,14 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   );
 
   const childActivityCountByNodeId = buildChildActivityCounts(
-    architectureGraph,
     visibleNodeIds,
     nodeById,
-    workspacePath,
-    activityByPath
+    activityByPath,
+    fileNodeIdByPathKey,
+    parentByChildId
   );
 
-  const nodes = architectureGraph.nodes
-    .filter((node) => isVisibleGraphNode(node))
+  const nodes = visibleNodes
     .filter((node) => visibleNodeIds.has(node.id))
     .map((node) =>
       toContextGraphNode({
@@ -97,8 +95,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
       })
     );
 
-  const containsEdges = architectureGraph.edges
-    .filter((edge) => edge.kind === "contains")
+  const visibleContainsEdges = containsEdges
     .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
     .filter((edge) => {
       const source = nodeById.get(edge.source);
@@ -108,7 +105,7 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     })
     .map(toContainsEdge);
 
-  const visibleHierarchy = pruneEmptyDirectories(nodes, containsEdges);
+  const visibleHierarchy = pruneEmptyDirectories(nodes, visibleContainsEdges);
   const collapsedHierarchy = collapseSingleDirectoryChains(
     visibleHierarchy.nodes,
     visibleHierarchy.edges
@@ -128,8 +125,6 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
 
         const isHighlighted = selectedFilePath === changedFile || selectedFilePath === impactedFile;
         const isRead = activityByPath.get(impactedFile)?.includes("read") ?? false;
-        const edgeColor = isRead ? IMPACT_EDGE_COLOR : UNREAD_IMPACT_EDGE_COLOR;
-
         const edgeId = `impact:${source}->${target}`;
 
         return {
@@ -147,13 +142,6 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
             kind: "impact",
             importSpecifier: relation.importSpecifier,
             isHighlighted,
-          },
-          markerEnd: {
-            color: edgeColor,
-            height: IMPACT_EDGE_MARKER_SIZE,
-            strokeWidth: 1.5,
-            type: "arrowclosed",
-            width: IMPACT_EDGE_MARKER_SIZE,
           },
           type: "contextGraphImpactEdge",
           zIndex: 20,
@@ -174,6 +162,38 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
     activity: options.fileActivity,
     impactedRelations: options.fileActivity.impactedRelations,
   };
+}
+
+function getArchitectureGraphIndex(architectureGraph: ArchitectureGraph, workspacePath: string) {
+  const cached = architectureGraphIndexes.get(architectureGraph);
+  if (cached?.workspacePath === workspacePath) {
+    return cached;
+  }
+
+  const containsEdges = architectureGraph.edges.filter((edge) => edge.kind === "contains");
+  const fileNodeIdByPathKey = new Map<string, string>();
+  const nodeById = new Map(architectureGraph.nodes.map((node) => [node.id, node]));
+  const parentByChildId = new Map(containsEdges.map((edge) => [edge.target, edge.source]));
+  const visibleNodes = architectureGraph.nodes.filter(isVisibleGraphNode);
+
+  for (const node of visibleNodes) {
+    if (node.kind !== "file" || !node.path) {
+      continue;
+    }
+    fileNodeIdByPathKey.set(displayPathForNode(node, workspacePath), node.id);
+    fileNodeIdByPathKey.set(normalizeWorkspacePath(node.path, workspacePath), node.id);
+  }
+
+  const index = {
+    containsEdges,
+    fileNodeIdByPathKey,
+    nodeById,
+    parentByChildId,
+    visibleNodes,
+    workspacePath,
+  };
+  architectureGraphIndexes.set(architectureGraph, index);
+  return index;
 }
 
 function pruneEmptyDirectories(
@@ -242,9 +262,9 @@ function toContextGraphNode({
       activities,
       childActivityCount,
       displayPath: displayPathForNode(node, workspacePath),
+      hasDirectFiles,
       isPinned,
       isSelected,
-      hasDirectFiles,
       kind: node.kind as ContextGraphNodeData["kind"],
       label: node.label,
       language: node.metadata?.language ?? "",
@@ -283,7 +303,11 @@ function collapseSingleDirectoryChains(
     while (children.length === 1) {
       const child = nodeById.get(children[0]);
 
-      if (!child || child.data.kind !== "directory") {
+      if (
+        !child ||
+        child.data.kind !== "directory" ||
+        hasDirectActivityFile(child.id, childrenByParentId, nodeById)
+      ) {
         break;
       }
 
@@ -322,6 +346,17 @@ function collapseSingleDirectoryChains(
   }
 
   return { nodes: collapsedNodes, edges: collapsedEdges };
+}
+
+function hasDirectActivityFile(
+  directoryId: string,
+  childrenByParentId: Map<string, string[]>,
+  nodeById: Map<string, ContextGraphNode>
+) {
+  return (childrenByParentId.get(directoryId) ?? []).some((childId) => {
+    const child = nodeById.get(childId);
+    return child?.data.kind === "file" && child.data.activities.length > 0;
+  });
 }
 
 function toContainsEdge(edge: ArchitectureEdge): ContextGraphEdge {

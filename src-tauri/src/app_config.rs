@@ -1,12 +1,16 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::shared::logger::{LogLevel, Logger};
+
 const CONFIG_DIRECTORY_NAME: &str = "coding-agent-va";
 const CONFIG_FILE_NAME: &str = "config.toml";
+static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -47,6 +51,62 @@ pub struct RuntimeHomes {
     pub pi: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum DescriptionReasoning {
+    #[default]
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+#[derive(Clone, Deserialize, Serialize, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DescriptionProviderSettings {
+    pub model: String,
+    pub reasoning: DescriptionReasoning,
+}
+
+impl Default for DescriptionProviderSettings {
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+            reasoning: DescriptionReasoning::None,
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize, TS)]
+#[serde(default, rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct DescriptionSettings {
+    pub codex: DescriptionProviderSettings,
+    pub claude: DescriptionProviderSettings,
+    pub pi: DescriptionProviderSettings,
+}
+
+impl Default for DescriptionSettings {
+    fn default() -> Self {
+        Self {
+            codex: DescriptionProviderSettings {
+                model: "gpt-5.6-luna".to_string(),
+                reasoning: DescriptionReasoning::None,
+            },
+            claude: DescriptionProviderSettings {
+                model: "claude-haiku-4-5".to_string(),
+                reasoning: DescriptionReasoning::None,
+            },
+            pi: DescriptionProviderSettings::default(),
+        }
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -57,6 +117,7 @@ pub struct AppSettings {
     pub hide_committed_files: bool,
     pub keyboard_shortcuts: BTreeMap<String, String>,
     pub runtime_homes: RuntimeHomes,
+    pub descriptions: DescriptionSettings,
 }
 
 impl Default for AppSettings {
@@ -68,6 +129,7 @@ impl Default for AppSettings {
             hide_committed_files: true,
             keyboard_shortcuts: BTreeMap::new(),
             runtime_homes: RuntimeHomes::default(),
+            descriptions: DescriptionSettings::default(),
         }
     }
 }
@@ -81,6 +143,7 @@ struct StoredAppSettings {
     hide_committed_files: bool,
     keyboard_shortcuts: BTreeMap<String, String>,
     runtime_homes: RuntimeHomes,
+    descriptions: DescriptionSettings,
 }
 
 impl Default for StoredAppSettings {
@@ -98,6 +161,7 @@ impl From<StoredAppSettings> for AppSettings {
             hide_committed_files: settings.hide_committed_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
+            descriptions: settings.descriptions,
         }
     }
 }
@@ -111,6 +175,7 @@ impl From<AppSettings> for StoredAppSettings {
             hide_committed_files: settings.hide_committed_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
+            descriptions: settings.descriptions,
         }
     }
 }
@@ -124,21 +189,42 @@ fn config_path() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub fn load_app_settings() -> Result<AppSettings, String> {
+pub async fn load_app_settings() -> Result<AppSettings, String> {
+    tauri::async_runtime::spawn_blocking(load_app_settings_from_disk)
+        .await
+        .map_err(|error| format!("settings load task failed: {error}"))?
+}
+
+fn load_app_settings_from_disk() -> Result<AppSettings, String> {
+    let _guard = CONFIG_FILE_LOCK
+        .lock()
+        .map_err(|_| "failed to lock application settings".to_string())?;
     let path = config_path()?;
     if !path.exists() {
+        let _ = Logger::log(LogLevel::Info, "Using default application settings", None);
         return Ok(AppSettings::default());
     }
 
     let contents = fs::read_to_string(&path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    toml::from_str::<StoredAppSettings>(&contents)
+    let settings = toml::from_str::<StoredAppSettings>(&contents)
         .map(AppSettings::from)
-        .map_err(|error| format!("failed to parse {}: {error}", path.display()))
+        .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+    let _ = Logger::log(LogLevel::Info, "Loaded application settings", None);
+    Ok(settings)
 }
 
 #[tauri::command]
-pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
+pub async fn save_app_settings(settings: AppSettings) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || save_app_settings_to_disk(settings))
+        .await
+        .map_err(|error| format!("settings save task failed: {error}"))?
+}
+
+fn save_app_settings_to_disk(settings: AppSettings) -> Result<(), String> {
+    let _guard = CONFIG_FILE_LOCK
+        .lock()
+        .map_err(|_| "failed to lock application settings".to_string())?;
     let path = config_path()?;
     let directory = path
         .parent()
@@ -152,7 +238,9 @@ pub fn save_app_settings(settings: AppSettings) -> Result<(), String> {
     fs::write(&temporary_path, contents)
         .map_err(|error| format!("failed to write {}: {error}", temporary_path.display()))?;
     fs::rename(&temporary_path, &path)
-        .map_err(|error| format!("failed to replace {}: {error}", path.display()))
+        .map_err(|error| format!("failed to replace {}: {error}", path.display()))?;
+    let _ = Logger::log(LogLevel::Debug, "Saved application settings", None);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -170,6 +258,7 @@ mod tests {
         assert!(settings.hide_committed_files);
         assert!(serialized.contains("monaco_theme = \"system\""));
         assert!(serialized.contains("[runtime_homes]"));
+        assert!(serialized.contains("model = \"gpt-5.6-luna\""));
     }
 
     #[test]
@@ -180,5 +269,6 @@ mod tests {
 
         assert!(settings.hide_committed_files);
         assert!(settings.runtime_homes.codex.is_empty());
+        assert_eq!(settings.descriptions.claude.model, "claude-haiku-4-5");
     }
 }

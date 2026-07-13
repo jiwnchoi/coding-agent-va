@@ -7,13 +7,19 @@ use ts_rs::{Config, TS};
 
 use crate::agent_session::{
     AgentRuntimeSource, AgentSessionFileActivity, AgentSessionFileDiff,
-    AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionProvider, AgentSessionSummary,
+    AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionNodeDescriptionRequest,
+    AgentSessionNodeDescriptionResponse, AgentSessionNodeDescriptionStreamEvent,
+    AgentSessionProvider, AgentSessionSummary, DescriptionGraphNode, DescriptionGraphRelation,
     SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration, SessionWatchTarget,
 };
-use crate::app_config::{AppFont, AppSettings, AppTheme, MonacoTheme, RuntimeHomes};
+use crate::app_config::{
+    AppFont, AppSettings, AppTheme, DescriptionProviderSettings, DescriptionReasoning,
+    DescriptionSettings, MonacoTheme, RuntimeHomes,
+};
 use crate::indexer::graph::{
     ArchitectureEdge, ArchitectureGraph, ArchitectureNode, EdgeKind, NodeKind,
 };
+use crate::shared::logger::{LogEntry, LogLevel};
 
 const GENERATED_BINDINGS_HEADER: &str =
     "// This file is generated from Rust types. Do not edit by hand.\n\n";
@@ -45,7 +51,12 @@ fn generated_typescript_bindings() -> String {
     push_binding::<AppFont>(&mut bindings, &config);
     push_binding::<MonacoTheme>(&mut bindings, &config);
     push_binding::<RuntimeHomes>(&mut bindings, &config);
+    push_binding::<DescriptionReasoning>(&mut bindings, &config);
+    push_binding::<DescriptionProviderSettings>(&mut bindings, &config);
+    push_binding::<DescriptionSettings>(&mut bindings, &config);
     push_binding::<AppSettings>(&mut bindings, &config);
+    push_binding::<LogLevel>(&mut bindings, &config);
+    push_binding::<LogEntry>(&mut bindings, &config);
     push_binding::<AgentSessionProvider>(&mut bindings, &config);
     push_binding::<AgentRuntimeSource>(&mut bindings, &config);
     push_binding::<AgentSessionSummary>(&mut bindings, &config);
@@ -57,6 +68,11 @@ fn generated_typescript_bindings() -> String {
     push_binding::<AgentSessionFileActivity>(&mut bindings, &config);
     push_binding::<AgentSessionImpactedFileRelation>(&mut bindings, &config);
     push_binding::<AgentSessionFileDiff>(&mut bindings, &config);
+    push_binding::<DescriptionGraphNode>(&mut bindings, &config);
+    push_binding::<DescriptionGraphRelation>(&mut bindings, &config);
+    push_binding::<AgentSessionNodeDescriptionRequest>(&mut bindings, &config);
+    push_binding::<AgentSessionNodeDescriptionResponse>(&mut bindings, &config);
+    push_binding::<AgentSessionNodeDescriptionStreamEvent>(&mut bindings, &config);
     push_binding::<NodeKind>(&mut bindings, &config);
     push_binding::<EdgeKind>(&mut bindings, &config);
     push_binding::<ArchitectureNode>(&mut bindings, &config);

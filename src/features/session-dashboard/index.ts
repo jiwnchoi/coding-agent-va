@@ -1,5 +1,6 @@
 export {
   FileActivityPanels,
+  SessionContextGraphTab,
   SessionContextGraphView,
   SessionFileViewer,
   SessionPickerDropdown,

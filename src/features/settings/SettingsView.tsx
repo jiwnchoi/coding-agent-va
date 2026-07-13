@@ -1,21 +1,39 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronLeft,
+  FileText,
   FolderCog,
   Keyboard,
   Monitor,
   Palette,
+  RefreshCw,
   Search,
+  Sparkles,
+  Trash2,
   Waypoints,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import keyboardShortcuts from "@/features/session-dashboard/config/keyboard-shortcuts.json";
-import type { AgentRuntimeSource } from "@/shared/lib/generated/bindings";
+import type {
+  AgentRuntimeSource,
+  DescriptionReasoning,
+  LogEntry,
+  LogLevel,
+} from "@/shared/lib/generated/bindings";
+import { logger } from "@/shared/lib/logger";
 import { cn } from "@/shared/lib/utils";
 
 import type { AppFont, AppSettings, AppTheme, MonacoTheme } from "./useAppSettings";
 
-type SettingGroup = "appearance" | "editor" | "graph" | "keyboard" | "runtimes";
+type SettingGroup =
+  | "appearance"
+  | "descriptions"
+  | "editor"
+  | "graph"
+  | "keyboard"
+  | "logs"
+  | "runtimes";
 
 const groups: {
   id: SettingGroup;
@@ -27,6 +45,7 @@ const groups: {
   { id: "editor", label: "Editor", section: "Personal", icon: Monitor },
   { id: "keyboard", label: "Keyboard shortcuts", section: "Personal", icon: Keyboard },
   { id: "graph", label: "Session graph", section: "Coding", icon: Waypoints },
+  { id: "descriptions", label: "Descriptions", section: "Coding", icon: Sparkles },
   { id: "runtimes", label: "Agent runtimes", section: "Coding", icon: FolderCog },
 ];
 
@@ -45,7 +64,8 @@ export function SettingsView({
 }) {
   const [group, setGroup] = useState<SettingGroup>("appearance");
   const [searchQuery, setSearchQuery] = useState("");
-  const title = groups.find((item) => item.id === group)?.label ?? "Settings";
+  const title =
+    group === "logs" ? "Logs" : (groups.find((item) => item.id === group)?.label ?? "Settings");
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   return (
@@ -67,7 +87,7 @@ export function SettingsView({
             className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </label>
-        <nav className="overflow-y-auto" aria-label="Settings sections">
+        <nav className="min-h-0 flex-1 overflow-y-auto" aria-label="Settings sections">
           {(["Personal", "Coding"] as const).map((section) => {
             const sectionGroups = groups.filter(
               (item) =>
@@ -100,6 +120,18 @@ export function SettingsView({
             );
           })}
         </nav>
+        <div className="border-sidebar-border mt-3 border-t pt-3">
+          <button
+            type="button"
+            onClick={() => setGroup("logs")}
+            className={cn(
+              "hover:bg-sidebar-accent flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+              group === "logs" && "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+            )}>
+            <FileText className="text-muted-foreground size-[1.05rem]" />
+            Logs
+          </button>
+        </div>
         <div className="text-muted-foreground mt-auto flex items-center justify-between px-2 pt-4 text-xs">
           <span className="truncate" title="~/.config/coding-agent-va/config.toml">
             config.toml
@@ -127,9 +159,13 @@ export function SettingsView({
             {group === "graph" ? (
               <GraphSettings settings={settings} onChange={onSettingsChange} />
             ) : null}
+            {group === "descriptions" ? (
+              <DescriptionSettings settings={settings} onChange={onSettingsChange} />
+            ) : null}
             {group === "keyboard" ? (
               <KeyboardSettings settings={settings} onChange={onSettingsChange} />
             ) : null}
+            {group === "logs" ? <LogsSettings /> : null}
             {group === "runtimes" ? (
               <RuntimeSettings
                 runtimeSources={runtimeSources}
@@ -142,6 +178,162 @@ export function SettingsView({
       </section>
     </main>
   );
+}
+
+function LogsSettings() {
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [levelFilter, setLevelFilter] = useState<LogLevel | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState("");
+  const logScrollRef = useRef<HTMLDivElement>(null);
+
+  async function loadLogs() {
+    try {
+      setEntries(await logger.entries());
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    }
+  }
+
+  useEffect(() => {
+    void loadLogs();
+  }, []);
+
+  async function clearLogs() {
+    try {
+      await logger.clear();
+      setEntries([]);
+      setError("");
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : String(clearError));
+    }
+  }
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const visibleEntries = entries.filter((entry) => {
+    if (levelFilter !== "all" && entry.level !== levelFilter) return false;
+    if (!normalizedSearchQuery) return true;
+
+    return [entry.message, entry.context ? JSON.stringify(entry.context) : ""]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedSearchQuery);
+  });
+  const logVirtualizer = useVirtualizer({
+    count: visibleEntries.length,
+    getScrollElement: () => logScrollRef.current,
+    estimateSize: () => 58,
+    getItemKey: (index) => `${visibleEntries[index]?.timestamp ?? "log"}-${index}`,
+    overscan: 12,
+  });
+
+  return (
+    <div>
+      <div className="border-border flex items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <h2 className="text-sm font-medium">Application logs</h2>
+          <p className="text-muted-foreground mt-1 text-sm leading-5">
+            Logs are stored in ~/.config/coding-agent-va/app.log.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => void loadLogs()}
+            className="border-input hover:bg-accent inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+            <RefreshCw className="size-3.5" /> Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => void clearLogs()}
+            className="border-destructive/40 text-destructive hover:bg-destructive/10 inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
+            <Trash2 className="size-3.5" /> Clear
+          </button>
+        </div>
+      </div>
+      <div className="border-border flex flex-nowrap gap-3 border-b py-4">
+        <label className="border-input bg-background focus-within:border-ring flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border px-3">
+          <Search className="text-muted-foreground size-4" />
+          <input
+            aria-label="Search logs"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search logs..."
+            className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
+          />
+        </label>
+        <div className="w-36 shrink-0">
+          <SelectControl<LogLevel | "all">
+            value={levelFilter}
+            onChange={setLevelFilter}
+            choices={[
+              { value: "all", label: "All levels" },
+              { value: "debug", label: "Debug" },
+              { value: "info", label: "Info" },
+              { value: "warn", label: "Warn" },
+              { value: "error", label: "Error" },
+            ]}
+          />
+        </div>
+      </div>
+      {error ? <p className="text-destructive py-4 text-sm">{error}</p> : null}
+      <div
+        ref={logScrollRef}
+        className="border-border mt-5 h-[min(60vh,42rem)] overflow-y-auto rounded-lg border">
+        {visibleEntries.length === 0 ? (
+          <p className="text-muted-foreground px-4 py-8 text-center text-sm">No log entries.</p>
+        ) : (
+          <div className="relative w-full" style={{ height: `${logVirtualizer.getTotalSize()}px` }}>
+            {logVirtualizer.getVirtualItems().map((virtualItem) => {
+              const entry = visibleEntries[virtualItem.index];
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={logVirtualizer.measureElement}
+                  className="border-border absolute top-0 left-0 w-full border-b px-4 py-3 font-mono text-xs"
+                  style={{ transform: `translateY(${virtualItem.start}px)` }}>
+                  <div className="flex gap-3">
+                    <span className="text-muted-foreground shrink-0">
+                      {formatLogTimestamp(entry.timestamp)}
+                    </span>
+                    <span
+                      className={cn(
+                        "h-fit rounded px-1.5 py-0.5 text-[0.65rem] font-semibold tracking-wide",
+                        logLevelBadgeClass(entry.level)
+                      )}>
+                      {entry.level.toUpperCase()}
+                    </span>
+                    <span className="min-w-0 break-words">{entry.message}</span>
+                  </div>
+                  {entry.context ? (
+                    <pre className="text-muted-foreground mt-1 ml-[7.5rem] break-words whitespace-pre-wrap">
+                      {JSON.stringify(entry.context)}
+                    </pre>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function logLevelBadgeClass(level: LogLevel) {
+  return level === "error"
+    ? "bg-destructive/15 text-destructive"
+    : level === "warn"
+      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+      : level === "info"
+        ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+        : "bg-muted text-muted-foreground";
+}
+
+function formatLogTimestamp(timestamp: string) {
+  return new Date(timestamp).toLocaleString();
 }
 
 function SettingRow({
@@ -304,6 +496,81 @@ function GraphSettings({
       }
     />
   );
+}
+
+function DescriptionSettings({
+  settings,
+  onChange,
+}: {
+  settings: AppSettings;
+  onChange: (update: Partial<AppSettings>) => void;
+}) {
+  return (
+    <div className="divide-border divide-y">
+      {(["codex", "claude", "pi"] as const).map((provider) => {
+        const providerSettings = settings.descriptions[provider];
+        const providerLabel =
+          provider === "codex" ? "Codex" : provider === "claude" ? "Claude Code" : "Pi Agent";
+        const reasoningChoices = descriptionReasoningChoices(provider);
+
+        return (
+          <section className="py-5 first:pt-0" key={provider}>
+            <h2 className="text-sm font-medium">{providerLabel}</h2>
+            <p className="text-muted-foreground mt-1 text-sm leading-5">
+              Model and reasoning used when describing a session graph node.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <label className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">Model</span>
+                <input
+                  value={providerSettings.model}
+                  onChange={(event) =>
+                    onChange({
+                      descriptions: {
+                        ...settings.descriptions,
+                        [provider]: { ...providerSettings, model: event.target.value },
+                      },
+                    })
+                  }
+                  placeholder={provider === "pi" ? "Current session model" : "Model ID"}
+                  className="border-input bg-background focus:ring-ring/50 h-9 w-full rounded-md border px-3 text-sm outline-none focus:ring-2"
+                />
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">Reasoning</span>
+                <SelectControl<DescriptionReasoning>
+                  value={providerSettings.reasoning}
+                  onChange={(reasoning) =>
+                    onChange({
+                      descriptions: {
+                        ...settings.descriptions,
+                        [provider]: { ...providerSettings, reasoning },
+                      },
+                    })
+                  }
+                  choices={reasoningChoices}
+                />
+              </label>
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function descriptionReasoningChoices(provider: "codex" | "claude" | "pi") {
+  const choices: { label: string; value: DescriptionReasoning }[] = [
+    { value: "none", label: "None" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "Extra high" },
+    { value: "max", label: "Maximum" },
+  ];
+
+  return provider === "claude" ? choices.filter(({ value }) => value !== "minimal") : choices;
 }
 
 function KeyboardSettings({

@@ -1,5 +1,8 @@
 .shell {
   --context-graph-border-width: 2px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
 }
 
 .shell :global(.react-flow__pane) {
@@ -10,13 +13,43 @@
   cursor: grabbing;
 }
 
+.shell :global(.react-flow__viewport) {
+  will-change: transform;
+}
+
+.shell :global(.react-flow__node),
+.shell :global(.react-flow__edge) {
+  transition: opacity 140ms ease;
+}
+
+.hovering :global(.react-flow__node),
+.hovering :global(.react-flow__edge) {
+  opacity: 0.3;
+}
+
+.hovering :global(.react-flow__node).relatedElement,
+.hovering :global(.react-flow__edge).relatedElement {
+  opacity: 1;
+}
+
+.hovering :global(.react-flow__node).relatedElement {
+  z-index: 40 !important;
+}
+
+.hovering :global(.react-flow__edge).relatedElement {
+  z-index: 50 !important;
+}
+
 .node {
   --context-graph-node-border-color: var(--border);
   border-color: var(--context-graph-node-border-color);
   border-width: var(--context-graph-border-width);
+  transition:
+    opacity 140ms ease,
+    box-shadow 140ms ease;
 }
 
-.node:not(.directoryNode):hover {
+.node.hoverableNode:not(.directoryNode):hover {
   box-shadow: 0 0 1rem 0.25rem
     color-mix(in oklch, var(--context-graph-node-border-color) 38%, transparent);
 }
@@ -104,7 +137,7 @@
   stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
   stroke-dasharray: 7 5;
   stroke-width: 1.5;
-  opacity: 0.78;
+  opacity: 1;
 }
 
 .impactEdge,
@@ -112,6 +145,16 @@
 .unreadImpactEdge,
 .highlightedUnreadImpactEdge {
   z-index: 20;
+}
+
+.impactEdge,
+.highlightedImpactEdge {
+  color: #ff7f0e;
+}
+
+.unreadImpactEdge,
+.highlightedUnreadImpactEdge {
+  color: #d62728;
 }
 
 .impactEdge :global(.react-flow__edge-path),
@@ -123,7 +166,7 @@
 
 .impactEdge :global(.react-flow__edge-path),
 .unreadImpactEdge :global(.react-flow__edge-path) {
-  opacity: 0.78;
+  opacity: 1;
 }
 
 .highlightedImpactEdge :global(.react-flow__edge-path) {
@@ -141,6 +184,33 @@
   opacity: 1;
 }
 
+.impactEdgeHead {
+  fill: currentColor;
+  pointer-events: none;
+}
+
+.panning :global(.react-flow__node),
+.panning :global(.react-flow__edge),
+.panning .node,
+.largeGraph :global(.react-flow__node),
+.largeGraph :global(.react-flow__edge),
+.largeGraph .node {
+  transition: none;
+}
+
+.panning .node,
+.largeGraph .node {
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell :global(.react-flow__node),
+  .shell :global(.react-flow__edge),
+  .node {
+    transition: none;
+  }
+}
+
 .status {
   background: color-mix(in oklch, var(--card) 88%, transparent);
 }
@@ -149,4 +219,128 @@
   background: color-mix(in oklch, var(--destructive) 14%, var(--card));
   --context-graph-node-border-color: color-mix(in oklch, var(--destructive) 38%, var(--border));
   border-color: var(--context-graph-node-border-color);
+}
+
+.nodePopover {
+  animation: node-popover-in 140ms ease-out;
+}
+
+.nodePopoverActions {
+  width: max-content;
+}
+
+.nodePopoverResult {
+  width: min(26rem, calc(100vw - 1.5rem));
+}
+
+.nodeDescription {
+  font-family: var(--app-font);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.nodeDescription :is(h1, h2, h3, h4) {
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 1.1rem 0 0.45rem;
+}
+
+.nodeDescription h1 {
+  font-size: 1.25rem;
+}
+
+.nodeDescription h2 {
+  font-size: 1.05rem;
+}
+
+.nodeDescription :is(h3, h4) {
+  font-size: 0.95rem;
+}
+
+.nodeDescription > :first-child {
+  margin-top: 0;
+}
+
+.nodeDescription p,
+.nodeDescription :is(ul, ol),
+.nodeDescription blockquote,
+.nodeDescription pre {
+  margin: 0.6rem 0;
+}
+
+.nodeDescription :is(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.nodeDescription ul {
+  list-style: disc;
+}
+
+.nodeDescription ol {
+  list-style: decimal;
+}
+
+.nodeDescription li + li {
+  margin-top: 0.2rem;
+}
+
+.nodeDescription blockquote {
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+  padding-left: 0.75rem;
+}
+
+.nodeDescription code {
+  background: var(--muted);
+  border-radius: 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82em;
+  padding: 0.12rem 0.3rem;
+}
+
+.nodeDescription pre {
+  background: color-mix(in oklch, var(--muted) 72%, var(--background));
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+
+.nodeDescription pre code {
+  background: transparent;
+  border-radius: 0;
+  font-size: 0.78rem;
+  padding: 0;
+}
+
+.nodeDescription pre :global(.shiki) {
+  background: transparent !important;
+  color: var(--foreground) !important;
+}
+
+.nodeDescription pre :global(.shiki span) {
+  color: var(--shiki-light) !important;
+}
+
+:global(.dark) .nodeDescription pre :global(.shiki span) {
+  color: var(--shiki-dark) !important;
+}
+
+.nodeDescription a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 0.15rem;
+}
+
+@keyframes node-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

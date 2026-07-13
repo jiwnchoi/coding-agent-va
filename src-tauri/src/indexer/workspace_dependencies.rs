@@ -2,6 +2,7 @@ use super::import_extractor::{extract_code_identifiers, extract_imports};
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
 use super::symbol_extractor::{extract_declarations, extract_symbols};
+use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -93,54 +94,35 @@ pub fn find_session_impacted_file_relations(
     known_files.extend(changed_files.iter().cloned());
     let import_aliases = load_import_aliases(&workspace_root);
 
+    let indexed_importers = known_files
+        .par_iter()
+        .flat_map_iter(|importer| {
+            index_importer(importer, &workspace_root, &known_files, &import_aliases)
+        })
+        .collect::<Vec<_>>();
     let mut importers_by_dependency = HashMap::<PathBuf, Vec<ImporterRelation>>::new();
-
-    for importer in &known_files {
-        if !importer.is_file() {
-            continue;
-        }
-
-        let Some(language) = detect_language(importer) else {
-            continue;
-        };
-        let Ok(source) = fs::read_to_string(importer) else {
-            continue;
-        };
-        let Ok(tree) = parse_source(language, &source) else {
-            continue;
-        };
-        let code_identifiers = extract_code_identifiers(language, &source, tree.root_node());
-        for import in extract_imports(language, &source, tree.root_node()) {
-            for resolved in resolve_internal_import(
-                importer,
-                &import.specifier,
-                language,
-                &workspace_root,
-                &known_files,
-                &import_aliases,
-            ) {
-                importers_by_dependency
-                    .entry(resolved)
-                    .or_default()
-                    .push(ImporterRelation {
-                        importer: importer.clone(),
-                        import_specifier: import.specifier.clone(),
-                        statement: import.statement.clone(),
-                        code_identifiers: code_identifiers.clone(),
-                        forwards: import.forwards,
-                    });
-            }
-        }
+    for (dependency, importer) in indexed_importers {
+        importers_by_dependency
+            .entry(dependency)
+            .or_default()
+            .push(importer);
     }
 
+    let changed_symbols_by_edit = edits
+        .par_iter()
+        .map(|edit| {
+            let changed_file_path = normalize_path(&edit.path, &workspace_root);
+            changed_symbols(&changed_file_path, &edit.fragments)
+        })
+        .collect::<Vec<_>>();
+
     let mut impacted_relations = BTreeSet::<ImpactedFileRelation>::new();
-    for edit in edits {
+    for (edit, changed_symbols) in edits.iter().zip(changed_symbols_by_edit) {
         let changed_file_path = normalize_path(&edit.path, &workspace_root);
         let Some(changed_file) = relative_workspace_path(&changed_file_path, &workspace_root)
         else {
             continue;
         };
-        let changed_symbols = changed_symbols(&changed_file_path, &edit.fragments);
         let mut pending = VecDeque::from([(changed_file_path.clone(), changed_symbols)]);
         let mut visited_reexports = HashSet::new();
 
@@ -199,6 +181,58 @@ pub fn find_session_impacted_file_relations(
     }
 
     Ok(impacted_relations.into_iter().collect())
+}
+
+fn index_importer(
+    importer: &Path,
+    workspace_root: &Path,
+    known_files: &HashSet<PathBuf>,
+    import_aliases: &[ImportAlias],
+) -> Vec<(PathBuf, ImporterRelation)> {
+    if !importer.is_file() {
+        return Vec::new();
+    }
+
+    let Some(language) = detect_language(importer) else {
+        return Vec::new();
+    };
+    let Ok(source) = fs::read_to_string(importer) else {
+        return Vec::new();
+    };
+    let Ok(tree) = parse_source(language, &source) else {
+        return Vec::new();
+    };
+    let code_identifiers = extract_code_identifiers(language, &source, tree.root_node());
+
+    extract_imports(language, &source, tree.root_node())
+        .into_iter()
+        .flat_map(|import| {
+            resolve_internal_import(
+                importer,
+                &import.specifier,
+                language,
+                workspace_root,
+                known_files,
+                import_aliases,
+            )
+            .into_iter()
+            .map({
+                let code_identifiers = code_identifiers.clone();
+                move |resolved| {
+                    (
+                        resolved,
+                        ImporterRelation {
+                            importer: importer.to_path_buf(),
+                            import_specifier: import.specifier.clone(),
+                            statement: import.statement.clone(),
+                            code_identifiers: code_identifiers.clone(),
+                            forwards: import.forwards,
+                        },
+                    )
+                }
+            })
+        })
+        .collect()
 }
 
 fn changed_symbols(path: &Path, fragments: &[String]) -> Option<ChangedSymbols> {

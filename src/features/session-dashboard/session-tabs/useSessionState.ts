@@ -2,28 +2,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
 
-import { closeSessionTab, reconcileTabState, updateSessionHistory } from "./session-tab-utils";
+import {
+  closeSessionTab,
+  isSessionChecked,
+  reconcileTabState,
+  updateSessionHistory,
+} from "./session-tab-utils";
 
 export function useSessionState() {
   const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
   const [openSessionIds, setOpenSessionIds] = useState<string[]>([]);
-  const [dismissedSessionIds, setDismissedSessionIds] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>("");
   const [sessionHistoryIds, setSessionHistoryIds] = useState<string[]>([]);
   const [viewedSessionUpdatedAtMs, setViewedSessionUpdatedAtMs] = useState<Record<string, number>>(
     {}
   );
-  const dismissedSessionIdsRef = useRef(dismissedSessionIds);
   const sessionsRef = useRef(sessions);
   const openSessionIdsRef = useRef(openSessionIds);
   const selectedSessionIdRef = useRef(selectedSessionId);
   const sessionHistoryIdsRef = useRef(sessionHistoryIds);
+  const viewedSessionUpdatedAtMsRef = useRef(viewedSessionUpdatedAtMs);
   const hasInitializedSessionTabsRef = useRef(false);
   const hasInitializedViewedSessionsRef = useRef(false);
-
-  useEffect(() => {
-    dismissedSessionIdsRef.current = dismissedSessionIds;
-  }, [dismissedSessionIds]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -41,6 +41,10 @@ export function useSessionState() {
     sessionHistoryIdsRef.current = sessionHistoryIds;
   }, [sessionHistoryIds]);
 
+  useEffect(() => {
+    viewedSessionUpdatedAtMsRef.current = viewedSessionUpdatedAtMs;
+  }, [viewedSessionUpdatedAtMs]);
+
   const setSelectedSessionWithHistory = useCallback((nextSessionId: string) => {
     const previousSessionId = selectedSessionIdRef.current;
 
@@ -52,9 +56,6 @@ export function useSessionState() {
 
   const selectSession = useCallback(
     (sessionId: string) => {
-      setDismissedSessionIds((currentDismissedSessionIds) =>
-        currentDismissedSessionIds.filter((dismissedSessionId) => dismissedSessionId !== sessionId)
-      );
       setOpenSessionIds((currentOpenSessionIds) => {
         if (currentOpenSessionIds.includes(sessionId)) {
           return currentOpenSessionIds;
@@ -79,11 +80,6 @@ export function useSessionState() {
       setSelectedSessionWithHistory(nextSelectedSessionId);
       setSessionHistoryIds((currentSessionHistoryIds) =>
         currentSessionHistoryIds.filter((historySessionId) => historySessionId !== sessionId)
-      );
-      setDismissedSessionIds((currentDismissedSessionIds) =>
-        currentDismissedSessionIds.includes(sessionId)
-          ? currentDismissedSessionIds
-          : [...currentDismissedSessionIds, sessionId]
       );
     },
     [setSelectedSessionWithHistory]
@@ -116,14 +112,12 @@ export function useSessionState() {
       const currentSelectedSessionId = shouldInitializeSessionTabs
         ? ""
         : selectedSessionIdRef.current;
-      const knownSessionIds = new Set(sessionsRef.current.map((session) => session.id));
       const sessionIdsToOpen = shouldInitializeSessionTabs
         ? []
         : nextSessions
-            .filter((session) => !knownSessionIds.has(session.id))
+            .filter((session) => !isSessionChecked(session, viewedSessionUpdatedAtMsRef.current))
             .map((session) => session.id);
       const { nextOpenSessionIds, nextSelectedSessionId } = reconcileTabState({
-        currentDismissedSessionIds: dismissedSessionIdsRef.current,
         currentOpenSessionIds,
         currentSelectedSessionId,
         sessionIdsToOpen,

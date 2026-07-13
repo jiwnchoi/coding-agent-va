@@ -160,13 +160,6 @@ html[data-font="system-serif"] {
     background-clip: padding-box;
   }
 
-  body,
-  #root,
-  #root * {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
   body {
     @apply bg-background text-foreground;
     font-family: var(--app-font);

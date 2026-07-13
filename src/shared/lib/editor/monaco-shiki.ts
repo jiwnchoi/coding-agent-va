@@ -6,7 +6,7 @@ import { createHighlighter } from "shiki";
 export const SHIKI_LIGHT_THEME = "vitesse-light";
 export const SHIKI_DARK_THEME = "vitesse-dark";
 
-const SHIKI_LANGUAGE_IDS = [
+export const SHIKI_LANGUAGE_IDS = [
   "typescript",
   "javascript",
   "tsx",

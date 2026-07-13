@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::async_runtime::JoinHandle;
 
 use super::types::{AgentSessionFileActivity, AgentSessionProvider, AgentSessionSummary};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct AgentSessionWatchState {
-    pub(crate) watches: Mutex<HashMap<String, SessionWatchHandle>>,
-    pub(crate) session_lists: Mutex<HashMap<SessionListCacheKey, Vec<AgentSessionSummary>>>,
-    pub(crate) file_activities: Mutex<HashMap<FileActivityCacheKey, FileActivityCacheEntry>>,
+    pub(crate) watches: Arc<Mutex<HashMap<String, SessionWatchHandle>>>,
+    pub(crate) session_lists: Arc<Mutex<HashMap<SessionListCacheKey, Vec<AgentSessionSummary>>>>,
+    pub(crate) file_activities: Arc<Mutex<HashMap<FileActivityCacheKey, FileActivityCacheEntry>>>,
 }
 
 pub(crate) struct SessionWatchHandle {

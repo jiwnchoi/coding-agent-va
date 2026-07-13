@@ -5,20 +5,15 @@ export function collectVisibleNodeIds({
   architectureGraph,
   fileNodeIdByPathKey,
   includeEntireWorkspace,
+  parentByChildId,
 }: {
   activeFilePaths: Set<string>;
   architectureGraph: ArchitectureGraph;
   fileNodeIdByPathKey: Map<string, string>;
   includeEntireWorkspace: boolean;
+  parentByChildId: Map<string, string>;
 }) {
   const visibleNodeIds = new Set<string>();
-  const parentByChildId = new Map<string, string>();
-
-  for (const edge of architectureGraph.edges) {
-    if (edge.kind === "contains") {
-      parentByChildId.set(edge.target, edge.source);
-    }
-  }
 
   if (includeEntireWorkspace) {
     for (const node of architectureGraph.nodes) {

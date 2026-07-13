@@ -9,7 +9,7 @@ import {
   handleTitlebarMouseDown,
   rotateSession,
   selectMostRecentlyUsedSession,
-  SessionContextGraphView,
+  SessionContextGraphTab,
   SessionFileViewer,
   SessionPickerDropdown,
   SessionTabBar,
@@ -17,7 +17,6 @@ import {
   useAgentSessionWatches,
   useSessionState,
 } from "@/features/session-dashboard";
-import { useSessionFileActivity } from "@/features/session-dashboard/hooks/useSessionFileActivity";
 import { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import {
   type AgentRuntimeSource,
@@ -29,6 +28,7 @@ import { SettingsView, useAppSettings } from "@/features/settings";
 import { useEditorTheme } from "@/shared/hooks/useEditorTheme";
 import type { KeyboardShortcut } from "@/shared/hooks/useKeyboardShortcuts";
 import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
+import { logger } from "@/shared/lib/logger";
 import { cn } from "@/shared/lib/utils";
 
 import styles from "./App.module.css";
@@ -63,11 +63,6 @@ function App() {
     .map((sessionId) => sessions.find((session) => session.id === sessionId) ?? null)
     .filter((session): session is AgentSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
-  const { fileActivity, isFileActivityLoading } = useSessionFileActivity(
-    selectedSession,
-    fileActivityRefreshVersion,
-    settings.hideCommittedFiles
-  );
   const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
     useSessionFileDiff(selectedSession, selectedActivityFile);
   const editorTheme = useEditorTheme(settings.monacoTheme);
@@ -126,16 +121,18 @@ function App() {
     let disposed = false;
 
     async function loadSessions() {
-      const result = await invoke<AgentSessionList>("list_agent_sessions", {
-        runtimeHomes: settings.runtimeHomes,
-      });
-      if (disposed) {
-        return;
+      try {
+        const result = await invoke<AgentSessionList>("list_agent_sessions", {
+          runtimeHomes: settings.runtimeHomes,
+        });
+        if (disposed) return;
+        void logger.info("Loaded agent sessions", { count: String(result.sessions.length) });
+        setRuntimeSources(result.sources);
+        reconcileSessions(result.sessions);
+        setIsLoading(false);
+      } catch (error) {
+        void logger.error("Failed to load agent sessions", { error: String(error) });
       }
-
-      setRuntimeSources(result.sources);
-      reconcileSessions(result.sessions);
-      setIsLoading(false);
     }
 
     void loadSessions();
@@ -262,13 +259,20 @@ function App() {
               {selectedSessionLabel}
             </div>
             <div className="min-w-0 flex-1">
-              <SessionContextGraphView
-                fileActivity={fileActivity}
-                isFileActivityLoading={isFileActivityLoading || isLoading}
-                selectedActivityFile={selectedActivityFile}
-                selectedSession={selectedSession}
-                onSelectFile={setSelectedActivityFile}
-              />
+              <div className="relative h-full min-h-0 w-full">
+                {selectedSession ? (
+                  <SessionContextGraphTab
+                    key={selectedSession.id}
+                    descriptionSettings={settings.descriptions}
+                    fileActivityRefreshVersion={fileActivityRefreshVersion}
+                    hideCommittedFiles={settings.hideCommittedFiles}
+                    isSessionListLoading={isLoading}
+                    selectedActivityFile={selectedActivityFile}
+                    selectedSession={selectedSession}
+                    onSelectFile={setSelectedActivityFile}
+                  />
+                ) : null}
+              </div>
             </div>
             <SessionFileViewer
               errorMessage={fileDiffErrorMessage}

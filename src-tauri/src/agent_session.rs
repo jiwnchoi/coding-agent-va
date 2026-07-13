@@ -1,6 +1,7 @@
 mod activity;
 mod cache;
 mod commands;
+mod description;
 mod file_system;
 mod git;
 mod json;
@@ -16,13 +17,15 @@ mod watch;
 mod tests;
 
 pub use commands::{
-    get_agent_session_file_activity, get_agent_session_file_diff, list_agent_sessions,
-    manage_agent_session_watch_state, plan_agent_session_watch, start_agent_session_watch,
-    stop_agent_session_watch,
+    describe_agent_session_node, get_agent_session_file_activity, get_agent_session_file_diff,
+    list_agent_sessions, manage_agent_session_watch_state, plan_agent_session_watch,
+    start_agent_session_watch, stop_agent_session_watch,
 };
 #[cfg(test)]
 pub(crate) use types::{
     AgentRuntimeSource, AgentSessionFileActivity, AgentSessionFileDiff,
-    AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionProvider, AgentSessionSummary,
+    AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionNodeDescriptionRequest,
+    AgentSessionNodeDescriptionResponse, AgentSessionNodeDescriptionStreamEvent,
+    AgentSessionProvider, AgentSessionSummary, DescriptionGraphNode, DescriptionGraphRelation,
     SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration, SessionWatchTarget,
 };

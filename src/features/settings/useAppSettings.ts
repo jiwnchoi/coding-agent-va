@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
 
 import type { AppFont, AppSettings, AppTheme, MonacoTheme } from "@/shared/lib/generated/bindings";
+import { logger } from "@/shared/lib/logger";
 
 export type { AppFont, AppSettings, AppTheme, MonacoTheme };
 
@@ -12,6 +13,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   hideCommittedFiles: true,
   keyboardShortcuts: {},
   runtimeHomes: { claude: "", codex: "", pi: "" },
+  descriptions: {
+    codex: { model: "gpt-5.6-luna", reasoning: "none" },
+    claude: { model: "claude-haiku-4-5", reasoning: "none" },
+    pi: { model: "", reasoning: "none" },
+  },
 };
 
 function applyTheme(theme: AppTheme) {
@@ -41,11 +47,13 @@ export function useAppSettings() {
           setSettings(loadedSettings);
           setSettingsLoaded(true);
           setSettingsError("");
+          void logger.info("Loaded application settings");
         }
       } catch (error) {
         if (!disposed) {
           setSettingsError(error instanceof Error ? error.message : String(error));
         }
+        void logger.error("Failed to load application settings", { error: String(error) });
       }
     }
 
@@ -62,8 +70,14 @@ export function useAppSettings() {
     if (!settingsLoaded) return;
     const timeoutId = window.setTimeout(() => {
       void invoke("save_app_settings", { settings })
-        .then(() => setSettingsError(""))
-        .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)));
+        .then(() => {
+          setSettingsError("");
+          void logger.debug("Saved application settings");
+        })
+        .catch((error) => {
+          setSettingsError(error instanceof Error ? error.message : String(error));
+          void logger.error("Failed to save application settings", { error: String(error) });
+        });
     }, 150);
 
     return () => window.clearTimeout(timeoutId);

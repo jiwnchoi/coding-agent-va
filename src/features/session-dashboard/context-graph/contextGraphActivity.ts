@@ -1,7 +1,7 @@
 import type { ActivitySectionKey } from "@/features/session-dashboard/lib/session-watch";
 
-import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
-import type { ArchitectureGraph, ArchitectureNode, ContextGraphBuildOptions } from "./types";
+import { normalizeWorkspacePath } from "./contextGraphPaths";
+import type { ArchitectureNode, ContextGraphBuildOptions } from "./types";
 
 const ACTIVITY_ORDER: ActivitySectionKey[] = ["impacted", "edited", "deleted", "read"];
 
@@ -25,30 +25,20 @@ export function buildActivityByPath(
 }
 
 export function buildChildActivityCounts(
-  architectureGraph: ArchitectureGraph,
   visibleNodeIds: Set<string>,
   nodeById: Map<string, ArchitectureNode>,
-  workspacePath: string,
-  activityByPath: Map<string, ActivitySectionKey[]>
+  activityByPath: Map<string, ActivitySectionKey[]>,
+  fileNodeIdByPathKey: Map<string, string>,
+  parentByChildId: Map<string, string>
 ) {
   const childActivityCountByNodeId = new Map<string, number>();
-  const parentByChildId = new Map<string, string>();
-
-  for (const edge of architectureGraph.edges) {
-    if (edge.kind === "contains") {
-      parentByChildId.set(edge.target, edge.source);
-    }
-  }
 
   for (const [filePath, activities] of activityByPath) {
     if (activities.length === 0) {
       continue;
     }
 
-    const fileNode = architectureGraph.nodes.find(
-      (node) => node.kind === "file" && displayPathForNode(node, workspacePath) === filePath
-    );
-    let currentNodeId = fileNode?.id;
+    let currentNodeId = fileNodeIdByPathKey.get(filePath);
 
     while (currentNodeId) {
       if (visibleNodeIds.has(currentNodeId)) {

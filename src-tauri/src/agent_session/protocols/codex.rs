@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use super::{build_session_summary, AgentSessionProtocol};
 use crate::agent_session::activity::codex::{
     collect_codex_read_files, collect_codex_written_files, CodexRolloutEnvelope,
@@ -33,7 +35,7 @@ impl AgentSessionProtocol for CodexSessionProtocol {
         let sessions_dir = runtime_home.join("sessions");
 
         list_jsonl_files(&sessions_dir)
-            .into_iter()
+            .into_par_iter()
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())

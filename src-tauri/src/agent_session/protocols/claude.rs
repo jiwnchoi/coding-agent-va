@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use super::{build_session_summary, AgentSessionProtocol};
 use crate::agent_session::activity::{
     read_tool_call_file_activity, ActivityAccumulator, ToolSchema,
@@ -25,7 +27,7 @@ impl AgentSessionProtocol for ClaudeSessionProtocol {
 
     fn list_sessions(&self, runtime_home: &Path) -> Vec<AgentSessionSummary> {
         list_jsonl_files(&runtime_home.join("projects"))
-            .into_iter()
+            .into_par_iter()
             .filter(|path| {
                 !path
                     .components()

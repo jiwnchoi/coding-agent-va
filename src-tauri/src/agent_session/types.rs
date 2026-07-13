@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::app_config::DescriptionReasoning;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename_all = "lowercase")]
@@ -109,4 +111,58 @@ pub struct AgentSessionFileDiff {
     pub diff_target_label: String,
     pub file_missing: bool,
     pub is_tracked: bool,
+}
+
+#[derive(Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DescriptionGraphNode {
+    pub label: String,
+    pub path: String,
+    pub activities: Vec<String>,
+}
+
+#[derive(Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DescriptionGraphRelation {
+    pub source_path: String,
+    pub target_path: String,
+    pub import_specifier: String,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionNodeDescriptionRequest {
+    pub provider: AgentSessionProvider,
+    pub provider_session_id: String,
+    pub transcript_path: String,
+    pub runtime_home: String,
+    pub model: String,
+    pub reasoning: DescriptionReasoning,
+    pub cwd: String,
+    pub clicked_node: DescriptionGraphNode,
+    pub related_nodes: Vec<DescriptionGraphNode>,
+    pub relations: Vec<DescriptionGraphRelation>,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionNodeDescriptionResponse {
+    pub description: String,
+    pub provider_label: String,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AgentSessionNodeDescriptionStreamEvent {
+    Started {
+        provider_label: String,
+        cached: bool,
+    },
+    Chunk {
+        text: String,
+    },
 }

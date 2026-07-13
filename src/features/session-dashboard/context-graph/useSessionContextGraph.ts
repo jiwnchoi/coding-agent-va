@@ -7,8 +7,15 @@ import type {
 } from "@/features/session-dashboard/lib/session-watch";
 
 import { buildContextGraph } from "./buildContextGraph";
-import { layoutContextGraphWithHierarchy } from "./layoutContextGraphWithHierarchy";
+import { layoutContextGraph } from "./layoutContextGraph";
 import type { ArchitectureGraph } from "./types";
+
+const MAX_CACHED_WORKSPACES = 8;
+type WorkspaceGraphCacheEntry = {
+  graph?: ArchitectureGraph;
+  promise?: Promise<ArchitectureGraph>;
+};
+const workspaceGraphCache = new Map<string, WorkspaceGraphCacheEntry>();
 
 export function useSessionContextGraph({
   fileActivity,
@@ -24,19 +31,29 @@ export function useSessionContextGraph({
   selectedSession: AgentSessionSummary | null;
 }) {
   const workspacePath = selectedSession?.cwd ?? null;
-  const [indexedGraphsByWorkspacePath, setIndexedGraphsByWorkspacePath] = useState(
-    () => new Map<string, ArchitectureGraph>()
-  );
+  const [loadedArchitectureGraph, setLoadedArchitectureGraph] = useState<{
+    graph: ArchitectureGraph;
+    workspacePath: string;
+  } | null>(null);
   const [indexError, setIndexError] = useState<{
     message: string;
     workspacePath: string;
   } | null>(null);
   const architectureGraph = workspacePath
-    ? (indexedGraphsByWorkspacePath.get(workspacePath) ?? null)
+    ? loadedArchitectureGraph?.workspacePath === workspacePath
+      ? loadedArchitectureGraph.graph
+      : (workspaceGraphCache.get(workspacePath)?.graph ?? null)
     : null;
 
   useEffect(() => {
-    if (!workspacePath || architectureGraph) {
+    if (!workspacePath) {
+      return;
+    }
+    if (architectureGraph) {
+      const cached = workspaceGraphCache.get(workspacePath);
+      if (cached) {
+        touchWorkspaceGraphCache(workspacePath, cached);
+      }
       return;
     }
 
@@ -47,16 +64,10 @@ export function useSessionContextGraph({
       setIndexError(null);
 
       try {
-        const graph = await invoke<ArchitectureGraph>("index_workspace_graph", {
-          workspacePath: currentWorkspacePath,
-        });
+        const graph = await loadWorkspaceGraph(currentWorkspacePath);
 
         if (!disposed) {
-          setIndexedGraphsByWorkspacePath((graphsByWorkspacePath) => {
-            const nextGraphsByWorkspacePath = new Map(graphsByWorkspacePath);
-            nextGraphsByWorkspacePath.set(currentWorkspacePath, graph);
-            return nextGraphsByWorkspacePath;
-          });
+          setLoadedArchitectureGraph({ graph, workspacePath: currentWorkspacePath });
         }
       } catch (error) {
         if (!disposed) {
@@ -87,7 +98,7 @@ export function useSessionContextGraph({
 
     try {
       return {
-        contextGraph: layoutContextGraphWithHierarchy(model),
+        contextGraph: layoutContextGraph(model),
         layoutErrorMessage: "",
       };
     } catch (error) {
@@ -112,4 +123,40 @@ export function useSessionContextGraph({
     isLoading:
       Boolean(workspacePath) && !architectureGraph && indexError?.workspacePath !== workspacePath,
   };
+}
+
+function loadWorkspaceGraph(workspacePath: string) {
+  const cached = workspaceGraphCache.get(workspacePath);
+  if (cached?.graph) {
+    touchWorkspaceGraphCache(workspacePath, cached);
+    return Promise.resolve(cached.graph);
+  }
+  if (cached?.promise) {
+    return cached.promise;
+  }
+
+  const entry: WorkspaceGraphCacheEntry = {};
+  entry.promise = invoke<ArchitectureGraph>("index_workspace_graph", { workspacePath })
+    .then((graph) => {
+      entry.graph = graph;
+      entry.promise = undefined;
+      touchWorkspaceGraphCache(workspacePath, entry);
+      return graph;
+    })
+    .catch((error: unknown) => {
+      workspaceGraphCache.delete(workspacePath);
+      throw error;
+    });
+  workspaceGraphCache.set(workspacePath, entry);
+  return entry.promise;
+}
+
+function touchWorkspaceGraphCache(workspacePath: string, entry: WorkspaceGraphCacheEntry) {
+  workspaceGraphCache.delete(workspacePath);
+  workspaceGraphCache.set(workspacePath, entry);
+
+  const oldestWorkspacePath = workspaceGraphCache.keys().next().value;
+  if (workspaceGraphCache.size > MAX_CACHED_WORKSPACES && oldestWorkspacePath) {
+    workspaceGraphCache.delete(oldestWorkspacePath);
+  }
 }

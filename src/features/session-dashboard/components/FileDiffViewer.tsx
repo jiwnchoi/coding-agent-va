@@ -144,6 +144,7 @@ export function FileDiffViewer({
               fontSize: 13,
               glyphMargin: false,
               lineNumbersMinChars: 3,
+              hideUnchangedRegions: { enabled: true },
             }}
           />
         ) : null}

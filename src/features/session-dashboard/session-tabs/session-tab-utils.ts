@@ -88,21 +88,18 @@ export function selectSessionByTabNumber(openSessionIds: string[], tabNumber: nu
 }
 
 export function reconcileTabState({
-  currentDismissedSessionIds,
   currentOpenSessionIds,
   currentSelectedSessionId,
   sessionIdsToOpen,
 }: {
-  currentDismissedSessionIds: string[];
   currentOpenSessionIds: string[];
   currentSelectedSessionId: string;
   sessionIdsToOpen: string[];
 }) {
-  const dismissedSessionIdSet = new Set(currentDismissedSessionIds);
   const nextOpenSessionIds = [...currentOpenSessionIds];
 
   for (const sessionId of sessionIdsToOpen) {
-    if (!dismissedSessionIdSet.has(sessionId) && !nextOpenSessionIds.includes(sessionId)) {
+    if (!nextOpenSessionIds.includes(sessionId)) {
       nextOpenSessionIds.push(sessionId);
     }
   }
