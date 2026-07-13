@@ -3,6 +3,7 @@
 ## Development Setup
 
 ### Required Tools
+Install [`mise` first](https://github.com/jdx/mise)
 
 This project pins local development tool versions in `mise.toml`.
 
