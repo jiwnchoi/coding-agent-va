@@ -61,6 +61,8 @@ export type AgentSessionSummary = {
 export type AgentSessionList = {
   sources: Array<AgentRuntimeSource>;
   sessions: Array<AgentSessionSummary>;
+  hasMore: boolean;
+  nextOffset: number;
 };
 
 export type SessionWatchTarget = {

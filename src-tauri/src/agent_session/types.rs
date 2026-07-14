@@ -40,6 +40,8 @@ pub struct AgentSessionSummary {
 pub struct AgentSessionList {
     pub sources: Vec<AgentRuntimeSource>,
     pub sessions: Vec<AgentSessionSummary>,
+    pub has_more: bool,
+    pub next_offset: usize,
 }
 
 #[derive(Clone, Serialize, TS)]

@@ -44,7 +44,8 @@ fn pi_protocol_lists_sessions_and_extracts_file_activity() {
     .expect("write assistant");
 
     let protocol = PiSessionProtocol;
-    let sessions = protocol.list_sessions(&temp_dir);
+    let candidates = protocol.list_session_candidates(&temp_dir);
+    let sessions = protocol.hydrate_sessions(&temp_dir, &candidates);
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, AgentSessionProvider::Pi);
     assert_eq!(sessions[0].title, "Implement the thing");
@@ -118,7 +119,8 @@ fn claude_protocol_lists_sessions_and_extracts_file_activity() {
     writeln!(transcript, "{assistant_entry}").expect("write assistant");
 
     let protocol = ClaudeSessionProtocol;
-    let sessions = protocol.list_sessions(&temp_dir);
+    let candidates = protocol.list_session_candidates(&temp_dir);
+    let sessions = protocol.hydrate_sessions(&temp_dir, &candidates);
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].provider, AgentSessionProvider::Claude);
     assert_eq!(sessions[0].title, "Fix bug title");

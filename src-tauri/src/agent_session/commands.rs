@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -9,24 +9,28 @@ use watchexec::Watchexec;
 use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
-    create_watch_plan_cached, invalidate_watch_caches, list_sessions_cached,
-    read_file_activity_cached,
+    cache_loaded_sessions, create_watch_plan_cached, invalidate_watch_caches,
+    list_session_candidates_cached, read_file_activity_cached,
 };
 use super::description::{describe_session_node, NodeDescriptionCacheState};
+use super::file_system::resolve_existing_dir;
 use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
+use super::protocols::AgentSessionCandidate;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
     AgentSessionFileActivity, AgentSessionFileDiff, AgentSessionList,
     AgentSessionNodeDescriptionRequest, AgentSessionNodeDescriptionResponse,
-    AgentSessionNodeDescriptionStreamEvent, AgentSessionProvider, SessionWatchEventPayload,
-    SessionWatchPlan, SessionWatchRegistration,
+    AgentSessionNodeDescriptionStreamEvent, AgentSessionProvider, AgentSessionSummary,
+    SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration,
 };
 use super::watch::{
     emit_session_watch_event, is_relevant_watch_path, normalize_watch_event_path,
     stop_existing_watch, watch_stopped_payload, watched_paths_from_targets,
 };
+
+const MAX_SESSION_PAGE_SIZE: usize = 100;
 
 #[tauri::command]
 pub async fn describe_agent_session_node(
@@ -49,28 +53,70 @@ pub async fn describe_agent_session_node(
 pub async fn list_agent_sessions(
     state: State<'_, AgentSessionWatchState>,
     runtime_homes: Option<BTreeMap<String, String>>,
+    offset: usize,
+    limit: usize,
 ) -> Result<AgentSessionList, String> {
     let state = state.inner().clone();
     run_blocking("session listing", move || {
+        let limit = limit.clamp(1, MAX_SESSION_PAGE_SIZE);
         let sources = default_runtime_sources(runtime_homes.as_ref());
-        let session_batches = sources
+        let mut candidates = sources
             .par_iter()
             .filter(|source| source.available)
-            .map(|source| {
+            .map(|source| -> Result<Vec<SessionCandidateSource>, String> {
                 let protocol = source.provider.protocol();
-                list_sessions_cached(
-                    &state,
-                    protocol.as_ref(),
-                    &PathBuf::from(&source.runtime_home),
+                let runtime_home = resolve_existing_dir(&PathBuf::from(&source.runtime_home))?;
+                Ok(
+                    list_session_candidates_cached(&state, protocol.as_ref(), &runtime_home)?
+                        .into_iter()
+                        .map(|candidate| SessionCandidateSource {
+                            provider: source.provider,
+                            runtime_home: runtime_home.clone(),
+                            candidate,
+                        })
+                        .collect(),
                 )
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut sessions = session_batches.into_iter().flatten().collect::<Vec<_>>();
-        sessions.sort_by(|left, right| {
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| {
             right
+                .candidate
                 .updated_at_ms
-                .cmp(&left.updated_at_ms)
-                .then_with(|| left.id.cmp(&right.id))
+                .cmp(&left.candidate.updated_at_ms)
+                .then_with(|| {
+                    left.candidate
+                        .transcript_path
+                        .cmp(&right.candidate.transcript_path)
+                })
+        });
+        let (sessions, next_offset) = hydrate_session_page(&candidates, offset, limit, |chunk| {
+            sources
+                .par_iter()
+                .filter(|source| source.available)
+                .filter_map(|source| {
+                    let source_candidates = chunk
+                        .iter()
+                        .filter(|item| item.provider == source.provider)
+                        .collect::<Vec<_>>();
+                    let runtime_home = &source_candidates.first()?.runtime_home;
+                    let page_candidates = source_candidates
+                        .iter()
+                        .map(|item| item.candidate.clone())
+                        .collect::<Vec<_>>();
+                    let sessions = source
+                        .provider
+                        .protocol()
+                        .hydrate_sessions(runtime_home, &page_candidates);
+                    cache_loaded_sessions(&state, source.provider, runtime_home, &sessions);
+                    Some(sessions)
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .flatten()
+                .collect()
         });
 
         let _ = Logger::log(
@@ -82,9 +128,48 @@ pub async fn list_agent_sessions(
             )])),
         );
 
-        Ok(AgentSessionList { sources, sessions })
+        Ok(AgentSessionList {
+            sources,
+            sessions,
+            has_more: next_offset < candidates.len(),
+            next_offset,
+        })
     })
     .await
+}
+
+struct SessionCandidateSource {
+    provider: AgentSessionProvider,
+    runtime_home: PathBuf,
+    candidate: AgentSessionCandidate,
+}
+
+fn hydrate_session_page(
+    candidates: &[SessionCandidateSource],
+    offset: usize,
+    limit: usize,
+    mut hydrate_chunk: impl FnMut(&[SessionCandidateSource]) -> Vec<AgentSessionSummary>,
+) -> (Vec<AgentSessionSummary>, usize) {
+    let mut next_offset = offset.min(candidates.len());
+    let mut sessions = Vec::with_capacity(limit);
+    while sessions.len() < limit && next_offset < candidates.len() {
+        let chunk_end = next_offset
+            .saturating_add(limit - sessions.len())
+            .min(candidates.len());
+        let chunk = &candidates[next_offset..chunk_end];
+        let mut hydrated_by_path = hydrate_chunk(chunk)
+            .into_iter()
+            .map(|session| (PathBuf::from(&session.transcript_path), session))
+            .collect::<HashMap<_, _>>();
+        sessions.extend(
+            chunk
+                .iter()
+                .filter_map(|item| hydrated_by_path.remove(&item.candidate.transcript_path)),
+        );
+        next_offset = chunk_end;
+    }
+
+    (sessions, next_offset)
 }
 
 #[tauri::command]
@@ -330,4 +415,52 @@ where
     tauri::async_runtime::spawn_blocking(task)
         .await
         .map_err(|error| format!("{task_name} task failed: {error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_pages_fill_past_invalid_candidates() {
+        let candidates = ["invalid.jsonl", "valid-1.jsonl", "valid-2.jsonl"]
+            .into_iter()
+            .map(|name| SessionCandidateSource {
+                provider: AgentSessionProvider::Pi,
+                runtime_home: PathBuf::from("/runtime"),
+                candidate: AgentSessionCandidate {
+                    transcript_path: PathBuf::from("/runtime").join(name),
+                    updated_at_ms: 1,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let (sessions, next_offset) = hydrate_session_page(&candidates, 0, 2, |chunk| {
+            chunk
+                .iter()
+                .filter(|item| {
+                    item.candidate
+                        .transcript_path
+                        .file_name()
+                        .is_some_and(|name| name != "invalid.jsonl")
+                })
+                .map(|item| AgentSessionSummary {
+                    id: item.candidate.transcript_path.display().to_string(),
+                    provider: item.provider,
+                    provider_session_id: "session".to_string(),
+                    provider_label: "Pi Agent".to_string(),
+                    title: "Session".to_string(),
+                    transcript_path: item.candidate.transcript_path.display().to_string(),
+                    cwd: None,
+                    runtime_home: item.runtime_home.display().to_string(),
+                    updated_at_ms: item.candidate.updated_at_ms,
+                })
+                .collect()
+        });
+
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(next_offset, 3);
+        assert!(sessions[0].transcript_path.ends_with("valid-1.jsonl"));
+        assert!(sessions[1].transcript_path.ends_with("valid-2.jsonl"));
+    }
 }

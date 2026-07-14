@@ -29,9 +29,16 @@ Shared behavior stays outside provider implementations:
 - impacted-file discovery through the workspace dependency indexer
 - activity sorting and read-vs-edit deduplication
 
-Session discovery runs provider and transcript scans in parallel through Rayon. Filesystem, Git,
-dependency-indexing, and transcript work invoked through Tauri commands runs on Tokio's blocking
-pool; watcher event coordination remains on the asynchronous Tokio runtime.
+Session discovery first collects transcript paths and modification times without parsing transcript
+contents. The combined provider list is sorted by recency, then metadata such as title and cwd is
+hydrated in 20-session pages through Rayon. The frontend initially displays 10 of the first 20
+hydrated sessions, advances in 10-session display batches, and fetches the next 20-session page as
+the virtualized picker approaches the end of the hydrated data.
+Watch planning reuses already hydrated sessions instead of forcing hydration of the full history,
+and watcher registrations refresh when another page introduces a workspace.
+
+Filesystem, Git, dependency-indexing, and transcript work invoked through Tauri commands runs on
+Tokio's blocking pool; watcher event coordination remains on the asynchronous Tokio runtime.
 
 ## Node Descriptions
 

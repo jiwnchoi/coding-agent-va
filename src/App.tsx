@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildShortcuts,
@@ -32,6 +32,8 @@ import { cn } from "@/shared/lib/utils";
 
 import styles from "./App.module.css";
 
+const SESSION_FETCH_PAGE_SIZE = 20;
+
 function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const { settings, settingsError, updateSettings } = useAppSettings();
@@ -54,11 +56,28 @@ function App() {
   const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
     null
   );
-  const sessionsQuery = useQuery({
+  const reconciledSessionPageCountRef = useRef(0);
+  const sessionsQuery = useInfiniteQuery({
     queryKey: queryKeys.sessions(settings.runtimeHomes),
-    queryFn: () => listAgentSessions(settings.runtimeHomes),
+    queryFn: ({ pageParam }) =>
+      listAgentSessions(settings.runtimeHomes, pageParam, SESSION_FETCH_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextOffset : undefined),
   });
-  const runtimeSources = sessionsQuery.data?.sources ?? [];
+  const loadedSessions = useMemo(() => {
+    const sessionsById = new Map<string, AgentSessionSummary>();
+
+    for (const session of (sessionsQuery.data?.pages ?? []).flatMap((page) => page.sessions)) {
+      sessionsById.set(session.id, session);
+    }
+
+    return [...sessionsById.values()].sort(
+      (left, right) =>
+        right.updatedAtMs - left.updatedAtMs ||
+        left.transcriptPath.localeCompare(right.transcriptPath)
+    );
+  }, [sessionsQuery.data?.pages]);
+  const runtimeSources = sessionsQuery.data?.pages[0]?.sources ?? [];
   const isLoading = sessionsQuery.isPending;
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [session.id, session])),
@@ -123,18 +142,24 @@ function App() {
   const shortcuts = buildShortcuts(shortcutActions, settings.keyboardShortcuts);
 
   useEffect(() => {
+    reconciledSessionPageCountRef.current = 0;
+  }, [settings.runtimeHomes]);
+
+  useEffect(() => {
     if (sessionsQuery.data) {
       void logger.info("Loaded agent sessions", {
-        count: String(sessionsQuery.data.sessions.length),
+        count: String(loadedSessions.length),
       });
-      reconcileSessions(sessionsQuery.data.sessions);
+      const pageCount = sessionsQuery.data.pages.length;
+      reconcileSessions(loadedSessions, pageCount > reconciledSessionPageCountRef.current);
+      reconciledSessionPageCountRef.current = pageCount;
     }
     if (sessionsQuery.error) {
       void logger.error("Failed to load agent sessions", { error: String(sessionsQuery.error) });
     }
-  }, [reconcileSessions, sessionsQuery.data, sessionsQuery.error]);
+  }, [loadedSessions, reconcileSessions, sessionsQuery.data, sessionsQuery.error]);
 
-  const watchRegistrations = useAgentSessionWatches(runtimeSources);
+  const watchRegistrations = useAgentSessionWatches(runtimeSources, loadedSessions);
 
   useEffect(() => {
     let disposed = false;
@@ -198,10 +223,13 @@ function App() {
             <>
               <div className="shrink-0">
                 <SessionPickerDropdown
+                  hasMoreSessions={sessionsQuery.hasNextPage}
+                  isFetchingMoreSessions={sessionsQuery.isFetchingNextPage}
                   searchQuery={searchQuery}
                   sessions={sessions}
                   viewedSessionUpdatedAtMs={viewedSessionUpdatedAtMs}
                   setSearchQuery={setSearchQuery}
+                  onLoadMoreSessions={() => void sessionsQuery.fetchNextPage()}
                   onSelectSession={handleSelectSession}
                 />
               </div>
