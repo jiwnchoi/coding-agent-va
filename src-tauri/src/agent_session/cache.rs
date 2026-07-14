@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 use super::file_system::{file_updated_at_ms, resolve_existing_dir};
 use super::git::read_git_index_updated_at_ms;
 use super::paths::normalize_absolute_activity_path;
-use super::protocols::AgentSessionProtocol;
+use super::protocols::{AgentSessionCandidate, AgentSessionProtocol};
 use super::state::{
     AgentSessionWatchState, FileActivityCacheEntry, FileActivityCacheKey, SessionListCacheKey,
 };
@@ -21,7 +21,7 @@ pub(crate) fn create_watch_plan_cached(
     runtime_home: &Path,
 ) -> Result<SessionWatchPlan, String> {
     let runtime_home = resolve_existing_dir(runtime_home)?;
-    let sessions = list_sessions_for_resolved_runtime_home_cached(state, protocol, &runtime_home);
+    let sessions = loaded_sessions_for_runtime_home(state, protocol.provider(), &runtime_home);
 
     Ok(build_session_watch_plan(
         protocol.provider(),
@@ -31,18 +31,45 @@ pub(crate) fn create_watch_plan_cached(
     ))
 }
 
-pub(crate) fn list_sessions_cached(
+pub(crate) fn list_session_candidates_cached(
     state: &AgentSessionWatchState,
     protocol: &dyn AgentSessionProtocol,
     runtime_home: &Path,
-) -> Result<Vec<AgentSessionSummary>, String> {
+) -> Result<Vec<AgentSessionCandidate>, String> {
     let runtime_home = resolve_existing_dir(runtime_home)?;
 
-    Ok(list_sessions_for_resolved_runtime_home_cached(
-        state,
-        protocol,
-        &runtime_home,
-    ))
+    let key = session_list_cache_key(protocol.provider(), &runtime_home);
+    if let Ok(cache) = state.session_candidates.lock() {
+        if let Some(candidates) = cache.get(&key) {
+            return Ok(candidates.clone());
+        }
+    }
+
+    let candidates = protocol.list_session_candidates(&runtime_home);
+    if let Ok(mut cache) = state.session_candidates.lock() {
+        cache.insert(key, candidates.clone());
+    }
+
+    Ok(candidates)
+}
+
+pub(crate) fn cache_loaded_sessions(
+    state: &AgentSessionWatchState,
+    provider: AgentSessionProvider,
+    runtime_home: &Path,
+    sessions: &[AgentSessionSummary],
+) {
+    let key = session_list_cache_key(provider, runtime_home);
+    if let Ok(mut cache) = state.loaded_sessions.lock() {
+        let loaded = cache.entry(key).or_default();
+        for session in sessions {
+            if let Some(existing) = loaded.iter_mut().find(|existing| existing.id == session.id) {
+                *existing = session.clone();
+            } else {
+                loaded.push(session.clone());
+            }
+        }
+    }
 }
 
 pub(crate) fn read_file_activity_cached(
@@ -102,7 +129,7 @@ pub(crate) fn invalidate_watch_caches(
         .any(|path| !git_index_path_set.contains(path))
     {
         let key = session_list_cache_key(provider, runtime_home);
-        if let Ok(mut cache) = state.session_lists.lock() {
+        if let Ok(mut cache) = state.session_candidates.lock() {
             cache.remove(&key);
         }
     }
@@ -123,24 +150,19 @@ pub(crate) fn invalidate_watch_caches(
     };
 }
 
-fn list_sessions_for_resolved_runtime_home_cached(
+fn loaded_sessions_for_runtime_home(
     state: &AgentSessionWatchState,
-    protocol: &dyn AgentSessionProtocol,
+    provider: AgentSessionProvider,
     runtime_home: &Path,
 ) -> Vec<AgentSessionSummary> {
-    let key = session_list_cache_key(protocol.provider(), runtime_home);
-    if let Ok(cache) = state.session_lists.lock() {
+    let key = session_list_cache_key(provider, runtime_home);
+    if let Ok(cache) = state.loaded_sessions.lock() {
         if let Some(sessions) = cache.get(&key) {
             return sessions.clone();
         }
     }
 
-    let sessions = protocol.list_sessions(runtime_home);
-    if let Ok(mut cache) = state.session_lists.lock() {
-        cache.insert(key, sessions.clone());
-    }
-
-    sessions
+    Vec::new()
 }
 
 fn session_list_cache_key(

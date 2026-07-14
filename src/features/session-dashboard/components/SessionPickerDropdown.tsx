@@ -1,7 +1,7 @@
 import { Claude, OpenAI } from "@lobehub/icons";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import piLogo from "@/assets/agent-logos/pi.svg";
 import type { AgentSessionSummary } from "@/features/session-dashboard/lib/session-watch";
@@ -18,8 +18,8 @@ import { Input } from "@/shared/components/ui/input";
 
 type SessionProvider = AgentSessionSummary["provider"];
 
-const SESSION_PAGE_SIZE = 30;
-const SESSION_LOAD_AHEAD_COUNT = 5;
+const SESSION_DISPLAY_BATCH_SIZE = 10;
+const SESSION_LOAD_AHEAD_COUNT = 3;
 
 const providerLabels: Record<SessionProvider, string> = {
   codex: "OpenAI",
@@ -46,16 +46,22 @@ function ProviderLogo({ provider }: { provider: SessionProvider }) {
 }
 
 export function SessionPickerDropdown({
+  hasMoreSessions,
+  isFetchingMoreSessions,
   searchQuery,
   sessions,
   viewedSessionUpdatedAtMs,
   setSearchQuery,
+  onLoadMoreSessions,
   onSelectSession,
 }: {
+  hasMoreSessions: boolean;
+  isFetchingMoreSessions: boolean;
   searchQuery: string;
   sessions: AgentSessionSummary[];
   viewedSessionUpdatedAtMs: Record<string, number>;
   setSearchQuery: (value: string) => void;
+  onLoadMoreSessions: () => void;
   onSelectSession: (sessionId: string) => void;
 }) {
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -82,9 +88,12 @@ export function SessionPickerDropdown({
         <DropdownMenuSeparator />
         <SessionPickerVirtualList
           key={normalizedQuery}
+          hasMoreSessions={hasMoreSessions}
+          isFetchingMoreSessions={isFetchingMoreSessions}
           normalizedQuery={normalizedQuery}
           sessions={sessions}
           viewedSessionUpdatedAtMs={viewedSessionUpdatedAtMs}
+          onLoadMoreSessions={onLoadMoreSessions}
           onSelectSession={onSelectSession}
         />
       </DropdownMenuContent>
@@ -93,17 +102,23 @@ export function SessionPickerDropdown({
 }
 
 function SessionPickerVirtualList({
+  hasMoreSessions,
+  isFetchingMoreSessions,
   normalizedQuery,
   sessions,
   viewedSessionUpdatedAtMs,
+  onLoadMoreSessions,
   onSelectSession,
 }: {
+  hasMoreSessions: boolean;
+  isFetchingMoreSessions: boolean;
   normalizedQuery: string;
   sessions: AgentSessionSummary[];
   viewedSessionUpdatedAtMs: Record<string, number>;
+  onLoadMoreSessions: () => void;
   onSelectSession: (sessionId: string) => void;
 }) {
-  const [loadedSessionCount, setLoadedSessionCount] = useState(SESSION_PAGE_SIZE);
+  const [loadedSessionCount, setLoadedSessionCount] = useState(SESSION_DISPLAY_BATCH_SIZE);
   const scrollElementRef = useRef<HTMLDivElement>(null);
   const filteredSessions = useMemo(
     () =>
@@ -120,7 +135,7 @@ function SessionPickerVirtualList({
   );
   const visibleSessions = filteredSessions.slice(0, loadedSessionCount);
   const hasSearchResults = filteredSessions.length > 0;
-  const hasMoreSessions = visibleSessions.length < filteredSessions.length;
+  const hasMoreLoadedSessions = visibleSessions.length < filteredSessions.length;
   const rowVirtualizer = useVirtualizer({
     count: visibleSessions.length,
     getScrollElement: () => scrollElementRef.current,
@@ -129,19 +144,24 @@ function SessionPickerVirtualList({
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
 
-  useEffect(() => {
-    const lastVirtualRow = virtualRows[virtualRows.length - 1];
+  function handleScroll() {
+    const scrollElement = scrollElementRef.current;
 
     if (
-      hasMoreSessions &&
-      lastVirtualRow !== undefined &&
-      lastVirtualRow.index >= visibleSessions.length - SESSION_LOAD_AHEAD_COUNT
+      scrollElement &&
+      scrollElement.scrollTop + scrollElement.clientHeight >=
+        scrollElement.scrollHeight - SESSION_LOAD_AHEAD_COUNT * 36
     ) {
-      setLoadedSessionCount((currentCount) =>
-        Math.min(currentCount + SESSION_PAGE_SIZE, filteredSessions.length)
-      );
+      if (hasMoreLoadedSessions) {
+        setLoadedSessionCount((currentCount) =>
+          Math.min(currentCount + SESSION_DISPLAY_BATCH_SIZE, filteredSessions.length)
+        );
+      } else if (!normalizedQuery && hasMoreSessions && !isFetchingMoreSessions) {
+        setLoadedSessionCount((currentCount) => currentCount + SESSION_DISPLAY_BATCH_SIZE);
+        onLoadMoreSessions();
+      }
     }
-  }, [filteredSessions.length, hasMoreSessions, visibleSessions.length, virtualRows]);
+  }
 
   if (!hasSearchResults) {
     return sessions.length === 0 ? (
@@ -152,7 +172,7 @@ function SessionPickerVirtualList({
   }
 
   return (
-    <div ref={scrollElementRef} className="max-h-80 overflow-y-auto">
+    <div ref={scrollElementRef} onScroll={handleScroll} className="max-h-80 overflow-y-auto">
       <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
         {virtualRows.map((virtualRow) => {
           const session = visibleSessions[virtualRow.index];

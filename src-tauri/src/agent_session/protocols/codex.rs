@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use super::{build_session_summary, AgentSessionProtocol};
+use super::{build_session_summary, AgentSessionCandidate, AgentSessionProtocol};
 use crate::agent_session::activity::codex::{
     collect_codex_read_files, collect_codex_written_files, CodexRolloutEnvelope,
 };
@@ -30,23 +30,38 @@ impl AgentSessionProtocol for CodexSessionProtocol {
         crate::agent_session::file_system::home_dir().map(|home| home.join(".codex"))
     }
 
-    fn list_sessions(&self, runtime_home: &Path) -> Vec<AgentSessionSummary> {
-        let session_titles = read_codex_session_titles(runtime_home);
+    fn list_session_candidates(&self, runtime_home: &Path) -> Vec<AgentSessionCandidate> {
         let sessions_dir = runtime_home.join("sessions");
 
         list_jsonl_files(&sessions_dir)
-            .into_par_iter()
+            .into_iter()
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(".jsonl"))
             })
-            .filter_map(|path| {
+            .map(|transcript_path| AgentSessionCandidate {
+                updated_at_ms: file_updated_at_ms(&transcript_path),
+                transcript_path,
+            })
+            .collect()
+    }
+
+    fn hydrate_sessions(
+        &self,
+        runtime_home: &Path,
+        candidates: &[AgentSessionCandidate],
+    ) -> Vec<AgentSessionSummary> {
+        let session_titles = read_codex_session_titles(runtime_home);
+
+        candidates
+            .par_iter()
+            .filter_map(|candidate| {
+                let path = &candidate.transcript_path;
                 let file_name = path.file_name()?.to_str()?;
                 let provider_session_id = extract_codex_session_id(file_name)?;
-                let updated_at_ms = file_updated_at_ms(&path);
-                let cwd = read_codex_session_meta_cwd(&path);
-                let title = read_codex_first_user_prompt_title(&path)
+                let cwd = read_codex_session_meta_cwd(path);
+                let title = read_codex_first_user_prompt_title(path)
                     .or_else(|| {
                         session_titles
                             .get(&provider_session_id)
@@ -60,10 +75,10 @@ impl AgentSessionProtocol for CodexSessionProtocol {
                     self.provider(),
                     provider_session_id,
                     title,
-                    path,
+                    path.clone(),
                     cwd,
                     runtime_home,
-                    updated_at_ms,
+                    candidate.updated_at_ms,
                 ))
             })
             .collect()

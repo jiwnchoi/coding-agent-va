@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use super::{build_session_summary, AgentSessionProtocol};
+use super::{build_session_summary, AgentSessionCandidate, AgentSessionProtocol};
 use crate::agent_session::activity::{
     read_tool_call_file_activity, ActivityAccumulator, ToolSchema,
 };
@@ -25,21 +25,34 @@ impl AgentSessionProtocol for ClaudeSessionProtocol {
         crate::agent_session::file_system::home_dir().map(|home| home.join(".claude"))
     }
 
-    fn list_sessions(&self, runtime_home: &Path) -> Vec<AgentSessionSummary> {
+    fn list_session_candidates(&self, runtime_home: &Path) -> Vec<AgentSessionCandidate> {
         list_jsonl_files(&runtime_home.join("projects"))
-            .into_par_iter()
+            .into_iter()
             .filter(|path| {
                 !path
                     .components()
                     .any(|component| component.as_os_str() == "subagents")
             })
-            .filter_map(|path| {
-                let metadata = read_claude_session_metadata(&path)?;
-                let provider_session_id =
-                    metadata.session_id.or_else(|| file_stem_string(&path))?;
-                let updated_at_ms = file_updated_at_ms(&path);
-                let title = read_claude_ai_title(&path)
-                    .or_else(|| read_claude_first_user_prompt_title(&path))
+            .map(|transcript_path| AgentSessionCandidate {
+                updated_at_ms: file_updated_at_ms(&transcript_path),
+                transcript_path,
+            })
+            .collect()
+    }
+
+    fn hydrate_sessions(
+        &self,
+        runtime_home: &Path,
+        candidates: &[AgentSessionCandidate],
+    ) -> Vec<AgentSessionSummary> {
+        candidates
+            .par_iter()
+            .filter_map(|candidate| {
+                let path = &candidate.transcript_path;
+                let metadata = read_claude_session_metadata(path)?;
+                let provider_session_id = metadata.session_id.or_else(|| file_stem_string(path))?;
+                let title = read_claude_ai_title(path)
+                    .or_else(|| read_claude_first_user_prompt_title(path))
                     .or_else(|| metadata.cwd.as_deref().and_then(directory_title))
                     .unwrap_or_else(|| provider_session_id.clone());
 
@@ -47,10 +60,10 @@ impl AgentSessionProtocol for ClaudeSessionProtocol {
                     self.provider(),
                     provider_session_id,
                     title,
-                    path,
+                    path.clone(),
                     metadata.cwd,
                     runtime_home,
-                    updated_at_ms,
+                    candidate.updated_at_ms,
                 ))
             })
             .collect()

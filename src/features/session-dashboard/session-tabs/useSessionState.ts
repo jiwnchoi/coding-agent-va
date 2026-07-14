@@ -103,7 +103,7 @@ export function useSessionState() {
   }, [markSessionAsViewed]);
 
   const reconcileSessions = useCallback(
-    (nextSessions: AgentSessionSummary[]) => {
+    (nextSessions: AgentSessionSummary[], markNewSessionsAsViewed = false) => {
       const shouldInitializeSessionTabs = !hasInitializedSessionTabsRef.current;
       hasInitializedSessionTabsRef.current = true;
       const shouldInitializeViewedSessions = !hasInitializedViewedSessionsRef.current;
@@ -112,10 +112,15 @@ export function useSessionState() {
       const currentSelectedSessionId = shouldInitializeSessionTabs
         ? ""
         : selectedSessionIdRef.current;
+      const currentSessionIds = new Set(sessionsRef.current.map((session) => session.id));
       const sessionIdsToOpen = shouldInitializeSessionTabs
         ? []
         : nextSessions
-            .filter((session) => !isSessionChecked(session, viewedSessionUpdatedAtMsRef.current))
+            .filter(
+              (session) =>
+                (!markNewSessionsAsViewed || currentSessionIds.has(session.id)) &&
+                !isSessionChecked(session, viewedSessionUpdatedAtMsRef.current)
+            )
             .map((session) => session.id);
       const { nextOpenSessionIds, nextSelectedSessionId } = reconcileTabState({
         currentOpenSessionIds,
@@ -137,9 +142,11 @@ export function useSessionState() {
               nextOpenSessionIds.includes(sessionId)
           )
         );
-        if (shouldInitializeViewedSessions) {
+        if (shouldInitializeViewedSessions || markNewSessionsAsViewed) {
           for (const session of nextSessions) {
-            nextViewed[session.id] = session.updatedAtMs;
+            if (shouldInitializeViewedSessions || !currentSessionIds.has(session.id)) {
+              nextViewed[session.id] = session.updatedAtMs;
+            }
           }
         }
 

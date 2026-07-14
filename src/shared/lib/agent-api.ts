@@ -41,6 +41,7 @@ const sessionListSchema = object({
       updatedAtMs: number(),
     })
   ),
+  hasMore: boolean(),
 });
 const activitySchema = object({
   readFiles: array(string()),
@@ -105,9 +106,14 @@ export const queryKeys = {
 };
 
 export async function listAgentSessions(
-  runtimeHomes: Record<string, string>
+  runtimeHomes: Record<string, string>,
+  offset: number,
+  limit: number
 ): Promise<AgentSessionList> {
-  return parse(sessionListSchema, await invoke<unknown>("list_agent_sessions", { runtimeHomes }));
+  return parse(
+    sessionListSchema,
+    await invoke<unknown>("list_agent_sessions", { runtimeHomes, offset, limit })
+  );
 }
 export async function getAgentSessionFileActivity(args: {
   provider: string;

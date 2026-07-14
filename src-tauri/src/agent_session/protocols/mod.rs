@@ -18,10 +18,21 @@ use super::types::{
     AgentRuntimeSource, AgentSessionFileActivity, AgentSessionProvider, AgentSessionSummary,
 };
 
+#[derive(Clone)]
+pub(crate) struct AgentSessionCandidate {
+    pub(crate) transcript_path: PathBuf,
+    pub(crate) updated_at_ms: u64,
+}
+
 pub(crate) trait AgentSessionProtocol: Send + Sync {
     fn provider(&self) -> AgentSessionProvider;
     fn default_runtime_home(&self) -> Option<PathBuf>;
-    fn list_sessions(&self, runtime_home: &Path) -> Vec<AgentSessionSummary>;
+    fn list_session_candidates(&self, runtime_home: &Path) -> Vec<AgentSessionCandidate>;
+    fn hydrate_sessions(
+        &self,
+        runtime_home: &Path,
+        candidates: &[AgentSessionCandidate],
+    ) -> Vec<AgentSessionSummary>;
     fn watch_roots(&self, runtime_home: &Path) -> Vec<(PathBuf, bool, String)>;
     fn is_relevant_session_path(&self, path: &Path, runtime_home: &Path) -> bool;
     fn collect_file_activity(

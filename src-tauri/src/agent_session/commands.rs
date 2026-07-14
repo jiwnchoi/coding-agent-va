@@ -9,12 +9,14 @@ use watchexec::Watchexec;
 use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
-    create_watch_plan_cached, invalidate_watch_caches, list_sessions_cached,
-    read_file_activity_cached,
+    cache_loaded_sessions, create_watch_plan_cached, invalidate_watch_caches,
+    list_session_candidates_cached, read_file_activity_cached,
 };
 use super::description::{describe_session_node, NodeDescriptionCacheState};
+use super::file_system::resolve_existing_dir;
 use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
+use super::protocols::AgentSessionCandidate;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
@@ -27,6 +29,8 @@ use super::watch::{
     emit_session_watch_event, is_relevant_watch_path, normalize_watch_event_path,
     stop_existing_watch, watch_stopped_payload, watched_paths_from_targets,
 };
+
+const MAX_SESSION_PAGE_SIZE: usize = 100;
 
 #[tauri::command]
 pub async fn describe_agent_session_node(
@@ -49,22 +53,70 @@ pub async fn describe_agent_session_node(
 pub async fn list_agent_sessions(
     state: State<'_, AgentSessionWatchState>,
     runtime_homes: Option<BTreeMap<String, String>>,
+    offset: usize,
+    limit: usize,
 ) -> Result<AgentSessionList, String> {
     let state = state.inner().clone();
     run_blocking("session listing", move || {
+        let limit = limit.clamp(1, MAX_SESSION_PAGE_SIZE);
         let sources = default_runtime_sources(runtime_homes.as_ref());
+        let mut candidates = sources
+            .par_iter()
+            .filter(|source| source.available)
+            .map(|source| -> Result<Vec<SessionCandidateSource>, String> {
+                let protocol = source.provider.protocol();
+                let runtime_home = resolve_existing_dir(&PathBuf::from(&source.runtime_home))?;
+                Ok(
+                    list_session_candidates_cached(&state, protocol.as_ref(), &runtime_home)?
+                        .into_iter()
+                        .map(|candidate| SessionCandidateSource {
+                            provider: source.provider,
+                            runtime_home: runtime_home.clone(),
+                            candidate,
+                        })
+                        .collect(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| {
+            right
+                .candidate
+                .updated_at_ms
+                .cmp(&left.candidate.updated_at_ms)
+                .then_with(|| {
+                    left.candidate
+                        .transcript_path
+                        .cmp(&right.candidate.transcript_path)
+                })
+        });
+        let page_end = offset.saturating_add(limit).min(candidates.len());
+        let page = candidates
+            .get(offset.min(candidates.len())..page_end)
+            .unwrap_or_default();
         let session_batches = sources
             .par_iter()
             .filter(|source| source.available)
-            .map(|source| {
-                let protocol = source.provider.protocol();
-                list_sessions_cached(
-                    &state,
-                    protocol.as_ref(),
-                    &PathBuf::from(&source.runtime_home),
-                )
+            .filter_map(|source| {
+                let source_page = page
+                    .iter()
+                    .filter(|item| item.provider == source.provider)
+                    .collect::<Vec<_>>();
+                let runtime_home = &source_page.first()?.runtime_home;
+                let page_candidates = source_page
+                    .iter()
+                    .map(|item| item.candidate.clone())
+                    .collect::<Vec<_>>();
+                let sessions = source
+                    .provider
+                    .protocol()
+                    .hydrate_sessions(runtime_home, &page_candidates);
+                cache_loaded_sessions(&state, source.provider, runtime_home, &sessions);
+                Some(sessions)
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let mut sessions = session_batches.into_iter().flatten().collect::<Vec<_>>();
         sessions.sort_by(|left, right| {
             right
@@ -82,9 +134,19 @@ pub async fn list_agent_sessions(
             )])),
         );
 
-        Ok(AgentSessionList { sources, sessions })
+        Ok(AgentSessionList {
+            sources,
+            sessions,
+            has_more: page_end < candidates.len(),
+        })
     })
     .await
+}
+
+struct SessionCandidateSource {
+    provider: AgentSessionProvider,
+    runtime_home: PathBuf,
+    candidate: AgentSessionCandidate,
 }
 
 #[tauri::command]
