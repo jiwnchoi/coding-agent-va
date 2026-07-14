@@ -62,8 +62,7 @@ function App() {
     queryFn: ({ pageParam }) =>
       listAgentSessions(settings.runtimeHomes, pageParam, SESSION_FETCH_PAGE_SIZE),
     initialPageParam: 0,
-    getNextPageParam: (lastPage, pages) =>
-      lastPage.hasMore ? pages.length * SESSION_FETCH_PAGE_SIZE : undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextOffset : undefined),
   });
   const loadedSessions = useMemo(() => {
     const sessionsById = new Map<string, AgentSessionSummary>();
@@ -73,7 +72,9 @@ function App() {
     }
 
     return [...sessionsById.values()].sort(
-      (left, right) => right.updatedAtMs - left.updatedAtMs || left.id.localeCompare(right.id)
+      (left, right) =>
+        right.updatedAtMs - left.updatedAtMs ||
+        left.transcriptPath.localeCompare(right.transcriptPath)
     );
   }, [sessionsQuery.data?.pages]);
   const runtimeSources = sessionsQuery.data?.pages[0]?.sources ?? [];
@@ -158,7 +159,7 @@ function App() {
     }
   }, [loadedSessions, reconcileSessions, sessionsQuery.data, sessionsQuery.error]);
 
-  const watchRegistrations = useAgentSessionWatches(runtimeSources);
+  const watchRegistrations = useAgentSessionWatches(runtimeSources, loadedSessions);
 
   useEffect(() => {
     let disposed = false;

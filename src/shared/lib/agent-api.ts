@@ -42,6 +42,7 @@ const sessionListSchema = object({
     })
   ),
   hasMore: boolean(),
+  nextOffset: number(),
 });
 const activitySchema = object({
   readFiles: array(string()),

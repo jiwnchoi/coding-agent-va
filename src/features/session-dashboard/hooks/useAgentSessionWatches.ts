@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   AgentRuntimeSource,
@@ -18,20 +18,36 @@ type CurrentRef<T> = {
   current: T;
 };
 
-export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
+export function useAgentSessionWatches(
+  runtimeSources: AgentRuntimeSource[],
+  hydratedSessions: AgentSessionSummary[]
+) {
   const [watchRegistrations, setWatchRegistrations] = useState<SessionWatchRegistration[]>([]);
+  const activeWatchIdsRef = useRef<string[]>([]);
+  const watchTransitionRef = useRef(Promise.resolve());
+  const hydratedWorkspaceKey = [
+    ...new Set(
+      hydratedSessions.flatMap((session) =>
+        session.cwd ? [`${session.provider}:${session.cwd}`] : []
+      )
+    ),
+  ]
+    .sort()
+    .join("\0");
 
   useEffect(() => {
     const availableSources = runtimeSources.filter((source) => source.available);
-
-    if (availableSources.length === 0) {
-      return;
-    }
-
     let disposed = false;
-    const activeWatchIds: string[] = [];
 
-    async function startWatches() {
+    async function replaceWatches() {
+      const previousWatchIds = activeWatchIdsRef.current.splice(0);
+      await Promise.allSettled(
+        previousWatchIds.map((watchId) => invoke("stop_agent_session_watch", { watchId }))
+      );
+      if (disposed) {
+        return;
+      }
+
       const registrationResults = await Promise.allSettled(
         availableSources.map((source) =>
           invoke<SessionWatchRegistration>("start_agent_session_watch", {
@@ -40,16 +56,23 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
           })
         )
       );
+      if (disposed) {
+        await Promise.allSettled(
+          registrationResults.flatMap((result) =>
+            result.status === "fulfilled"
+              ? [invoke("stop_agent_session_watch", { watchId: result.value.watchId })]
+              : []
+          )
+        );
+        return;
+      }
+
       const registrations: SessionWatchRegistration[] = [];
+      const nextWatchIds: string[] = [];
 
       for (const result of registrationResults) {
         if (result.status === "fulfilled") {
-          if (disposed) {
-            void invoke("stop_agent_session_watch", { watchId: result.value.watchId });
-            continue;
-          }
-
-          activeWatchIds.push(result.value.watchId);
+          nextWatchIds.push(result.value.watchId);
           registrations.push(result.value);
         } else {
           void logger.error("Failed to start agent session watcher", {
@@ -59,20 +82,24 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
       }
 
       if (!disposed) {
+        activeWatchIdsRef.current = nextWatchIds;
         setWatchRegistrations(registrations);
       }
     }
 
-    void startWatches();
+    watchTransitionRef.current = watchTransitionRef.current.then(replaceWatches, replaceWatches);
 
     return () => {
       disposed = true;
-
-      for (const activeWatchId of activeWatchIds) {
-        void invoke("stop_agent_session_watch", { watchId: activeWatchId });
-      }
+      const stopWatches = async () => {
+        const watchIds = activeWatchIdsRef.current.splice(0);
+        await Promise.allSettled(
+          watchIds.map((watchId) => invoke("stop_agent_session_watch", { watchId }))
+        );
+      };
+      watchTransitionRef.current = watchTransitionRef.current.then(stopWatches, stopWatches);
     };
-  }, [runtimeSources]);
+  }, [hydratedWorkspaceKey, runtimeSources]);
 
   return runtimeSources.some((source) => source.available)
     ? watchRegistrations
