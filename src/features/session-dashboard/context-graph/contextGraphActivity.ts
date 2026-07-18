@@ -7,14 +7,26 @@ const ACTIVITY_ORDER: ActivitySectionKey[] = ["impacted", "edited", "deleted", "
 
 export function buildActivityByPath(
   fileActivity: ContextGraphBuildOptions["fileActivity"],
-  workspacePath: string
+  workspacePath: string,
+  showReadFiles: boolean
 ) {
   const activityByPath = new Map<string, ActivitySectionKey[]>();
 
-  addActivity(activityByPath, fileActivity.readFiles, "read", workspacePath);
   addActivity(activityByPath, fileActivity.editedFiles, "edited", workspacePath);
   addActivity(activityByPath, fileActivity.impactedFiles, "impacted", workspacePath);
   addActivity(activityByPath, fileActivity.deletedFiles, "deleted", workspacePath);
+
+  const impactedFiles = new Set(
+    fileActivity.impactedFiles.map((filePath) => normalizeWorkspacePath(filePath, workspacePath))
+  );
+  addActivity(
+    activityByPath,
+    fileActivity.readFiles,
+    "read",
+    workspacePath,
+    showReadFiles,
+    (filePath) => impactedFiles.has(normalizeWorkspacePath(filePath, workspacePath))
+  );
 
   for (const [filePath, activities] of activityByPath) {
     activities.sort((left, right) => ACTIVITY_ORDER.indexOf(left) - ACTIVITY_ORDER.indexOf(right));
@@ -64,9 +76,14 @@ function addActivity(
   activityByPath: Map<string, ActivitySectionKey[]>,
   filePaths: string[],
   activity: ActivitySectionKey,
-  workspacePath: string
+  workspacePath: string,
+  includeFiles = true,
+  shouldInclude: (filePath: string) => boolean = () => true
 ) {
   for (const filePath of filePaths) {
+    if (!includeFiles || !shouldInclude(filePath)) {
+      continue;
+    }
     const pathKey = normalizeWorkspacePath(filePath, workspacePath);
     const activities = activityByPath.get(pathKey) ?? [];
     activities.push(activity);

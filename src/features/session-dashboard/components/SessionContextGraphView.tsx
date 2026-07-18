@@ -44,6 +44,7 @@ type SessionContextGraphViewProps = {
   isFileActivityLoading: boolean;
   selectedActivityFile: SelectedActivityFile | null;
   selectedSession: AgentSessionSummary | null;
+  showReadFiles: boolean;
   onSelectFile: (selection: SelectedActivityFile) => void;
 };
 
@@ -53,6 +54,7 @@ export function SessionContextGraphView({
   isFileActivityLoading,
   selectedActivityFile,
   selectedSession,
+  showReadFiles,
   onSelectFile,
 }: SessionContextGraphViewProps) {
   const selectedFilePath = selectedActivityFile?.filePath ?? "";
@@ -62,6 +64,7 @@ export function SessionContextGraphView({
     pinnedFilePaths: EMPTY_PINNED_FILE_PATHS,
     selectedFilePath,
     selectedSession,
+    showReadFiles,
   });
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<
     ContextGraphNode,

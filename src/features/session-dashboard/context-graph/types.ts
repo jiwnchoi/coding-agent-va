@@ -63,4 +63,5 @@ export type ContextGraphBuildOptions = {
   pinnedFilePaths: string[];
   selectedFilePath: string;
   workspacePath: string | null;
+  showReadFiles: boolean;
 };

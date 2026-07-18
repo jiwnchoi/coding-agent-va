@@ -1,21 +1,16 @@
-import type { ActivitySectionKey } from "@/features/session-dashboard/lib/session-watch";
-
 import { getArchitectureGraphIndex } from "./architectureGraphIndex";
 import { buildActivityByPath, buildChildActivityCounts } from "./contextGraphActivity";
+import { toContextGraphNode } from "./contextGraphNode";
 import { displayPathForNode, normalizeWorkspacePath } from "./contextGraphPaths";
 import styles from "./ContextGraphView.module.css";
 import { collectVisibleNodeIds, isVisibleGraphNode } from "./contextGraphVisibility";
 import type {
   ArchitectureEdge,
-  ArchitectureNode,
   ContextGraphBuildOptions,
   ContextGraphEdge,
   ContextGraphModel,
   ContextGraphNode,
-  ContextGraphNodeData,
 } from "./types";
-
-const CONTEXT_NODE_TYPE = "contextGraphNode" as const;
 
 export function buildContextGraph(options: ContextGraphBuildOptions): ContextGraphModel {
   const architectureGraph = options.architectureGraph;
@@ -34,7 +29,11 @@ export function buildContextGraph(options: ContextGraphBuildOptions): ContextGra
   const architectureIndex = getArchitectureGraphIndex(architectureGraph, workspacePath);
   const { containsEdges, fileNodeIdByPathKey, nodeById, parentByChildId, visibleNodes } =
     architectureIndex;
-  const activityByPath = buildActivityByPath(options.fileActivity, workspacePath);
+  const activityByPath = buildActivityByPath(
+    options.fileActivity,
+    workspacePath,
+    options.showReadFiles
+  );
   const selectedFilePath = normalizeWorkspacePath(options.selectedFilePath, workspacePath);
   const pinnedFilePaths = options.pinnedFilePaths.map((filePath) =>
     normalizeWorkspacePath(filePath, workspacePath)
@@ -193,48 +192,6 @@ function pruneEmptyDirectories(
     edges: edges.filter(
       (edge) => retainedNodeIds.has(edge.source) && retainedNodeIds.has(edge.target)
     ),
-  };
-}
-
-function toContextGraphNode({
-  activities,
-  childActivityCount,
-  hasDirectFiles,
-  isPinned,
-  isSelected,
-  node,
-  workspacePath,
-}: {
-  activities: ActivitySectionKey[];
-  childActivityCount: number;
-  hasDirectFiles: boolean;
-  isPinned: boolean;
-  isSelected: boolean;
-  node: ArchitectureNode;
-  workspacePath: string;
-}): ContextGraphNode {
-  return {
-    id: node.id,
-    position: { x: 0, y: 0 },
-    type: CONTEXT_NODE_TYPE,
-    className:
-      node.kind === "directory"
-        ? styles.directoryNodeWrapper
-        : isSelected
-          ? styles.selectedNode
-          : undefined,
-    data: {
-      activities,
-      childActivityCount,
-      displayPath: displayPathForNode(node, workspacePath),
-      hasDirectFiles,
-      isPinned,
-      isSelected,
-      kind: node.kind as ContextGraphNodeData["kind"],
-      label: node.label,
-      language: node.metadata?.language ?? "",
-      path: node.path ?? "",
-    },
   };
 }
 

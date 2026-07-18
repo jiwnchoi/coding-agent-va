@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 import { useSessionFileActivity } from "@/features/session-dashboard/hooks/useSessionFileActivity";
 import type {
   AgentSessionSummary,
@@ -30,26 +28,15 @@ export function SessionContextGraphTab({
     selectedSession,
     hideCommittedFiles
   );
-  const visibleFileActivity = useMemo(() => {
-    if (showReadFiles) {
-      return fileActivity;
-    }
-
-    const impactedFiles = new Set(fileActivity.impactedFiles);
-    return {
-      ...fileActivity,
-      readFiles: fileActivity.readFiles.filter((filePath) => impactedFiles.has(filePath)),
-    };
-  }, [fileActivity, showReadFiles]);
-
   return (
     <div className="absolute inset-0">
       <SessionContextGraphView
         descriptionSettings={descriptionSettings}
-        fileActivity={visibleFileActivity}
+        fileActivity={fileActivity}
         isFileActivityLoading={isSessionListLoading || isFileActivityLoading}
         selectedActivityFile={selectedActivityFile}
         selectedSession={selectedSession}
+        showReadFiles={showReadFiles}
         onSelectFile={onSelectFile}
       />
     </div>

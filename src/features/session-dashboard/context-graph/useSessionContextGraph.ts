@@ -16,12 +16,14 @@ export function useSessionContextGraph({
   pinnedFilePaths,
   selectedFilePath,
   selectedSession,
+  showReadFiles,
 }: {
   fileActivity: AgentSessionFileActivity;
   includeEntireWorkspace: boolean;
   pinnedFilePaths: string[];
   selectedFilePath: string;
   selectedSession: AgentSessionSummary | null;
+  showReadFiles: boolean;
 }) {
   const workspacePath = selectedSession?.cwd ?? null;
   const architectureQuery = useQuery({
@@ -41,6 +43,7 @@ export function useSessionContextGraph({
       pinnedFilePaths,
       selectedFilePath,
       workspacePath,
+      showReadFiles,
     });
 
     try {
@@ -61,6 +64,7 @@ export function useSessionContextGraph({
     pinnedFilePaths,
     selectedFilePath,
     workspacePath,
+    showReadFiles,
   ]);
 
   return {
