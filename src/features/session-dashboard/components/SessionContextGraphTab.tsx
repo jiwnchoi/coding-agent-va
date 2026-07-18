@@ -30,10 +30,17 @@ export function SessionContextGraphTab({
     selectedSession,
     hideCommittedFiles
   );
-  const visibleFileActivity = useMemo(
-    () => (showReadFiles ? fileActivity : { ...fileActivity, readFiles: [] }),
-    [fileActivity, showReadFiles]
-  );
+  const visibleFileActivity = useMemo(() => {
+    if (showReadFiles) {
+      return fileActivity;
+    }
+
+    const impactedFiles = new Set(fileActivity.impactedFiles);
+    return {
+      ...fileActivity,
+      readFiles: fileActivity.readFiles.filter((filePath) => impactedFiles.has(filePath)),
+    };
+  }, [fileActivity, showReadFiles]);
 
   return (
     <div className="absolute inset-0">
