@@ -72,6 +72,11 @@ impl AgentSessionProtocol for ClaudeSessionProtocol {
     fn watch_roots(&self, runtime_home: &Path) -> Vec<(PathBuf, bool, String)> {
         vec![
             (
+                runtime_home.join("tasks"),
+                true,
+                "watch Claude task store updates".to_string(),
+            ),
+            (
                 runtime_home.join("history.jsonl"),
                 false,
                 "watch Claude prompt history updates".to_string(),
@@ -91,6 +96,15 @@ impl AgentSessionProtocol for ClaudeSessionProtocol {
 
         if relative_path == Path::new("history.jsonl") {
             return true;
+        }
+
+        if relative_path
+            .components()
+            .next()
+            .and_then(|component| component.as_os_str().to_str())
+            == Some("tasks")
+        {
+            return path.extension().and_then(|extension| extension.to_str()) == Some("json");
         }
 
         relative_path

@@ -44,6 +44,48 @@ pub struct AgentSessionList {
     pub next_offset: usize,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum AgentSessionTaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionTask {
+    pub id: String,
+    pub native_id: Option<String>,
+    pub subject: String,
+    pub description: Option<String>,
+    pub active_form: Option<String>,
+    pub status: AgentSessionTaskStatus,
+    pub depends_on: Vec<String>,
+    pub position: usize,
+    pub summary: Option<String>,
+    pub file_activity: AgentSessionFileActivity,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionDetails {
+    pub file_activity: AgentSessionFileActivity,
+    pub turns: Vec<AgentSessionPromptTurn>,
+}
+
+#[derive(Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionPromptTurn {
+    pub id: String,
+    pub prompts: Vec<String>,
+    pub summary: Option<String>,
+    pub tasks: Vec<AgentSessionTask>,
+    pub file_activity: AgentSessionFileActivity,
+    pub started_at_ms: u64,
+}
+
 #[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionWatchTarget {

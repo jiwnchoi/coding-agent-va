@@ -107,33 +107,17 @@ impl Default for DescriptionSettings {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize, TS)]
+#[derive(Clone, Default, Deserialize, Serialize, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 pub struct AppSettings {
     pub theme: AppTheme,
     pub font: AppFont,
     pub monaco_theme: MonacoTheme,
-    pub hide_committed_files: bool,
     pub show_read_files: bool,
     pub keyboard_shortcuts: BTreeMap<String, String>,
     pub runtime_homes: RuntimeHomes,
     pub descriptions: DescriptionSettings,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            theme: AppTheme::default(),
-            font: AppFont::default(),
-            monaco_theme: MonacoTheme::default(),
-            hide_committed_files: true,
-            show_read_files: false,
-            keyboard_shortcuts: BTreeMap::new(),
-            runtime_homes: RuntimeHomes::default(),
-            descriptions: DescriptionSettings::default(),
-        }
-    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -142,7 +126,6 @@ struct StoredAppSettings {
     theme: AppTheme,
     font: AppFont,
     monaco_theme: MonacoTheme,
-    hide_committed_files: bool,
     show_read_files: bool,
     keyboard_shortcuts: BTreeMap<String, String>,
     runtime_homes: RuntimeHomes,
@@ -161,7 +144,6 @@ impl From<StoredAppSettings> for AppSettings {
             theme: settings.theme,
             font: settings.font,
             monaco_theme: settings.monaco_theme,
-            hide_committed_files: settings.hide_committed_files,
             show_read_files: settings.show_read_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
@@ -176,7 +158,6 @@ impl From<AppSettings> for StoredAppSettings {
             theme: settings.theme,
             font: settings.font,
             monaco_theme: settings.monaco_theme,
-            hide_committed_files: settings.hide_committed_files,
             show_read_files: settings.show_read_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
@@ -260,7 +241,6 @@ mod tests {
             toml::from_str::<StoredAppSettings>(&serialized).expect("parse serialized settings");
         let settings = AppSettings::from(parsed);
 
-        assert!(settings.hide_committed_files);
         assert!(!settings.show_read_files);
         assert!(serialized.contains("monaco_theme = \"system\""));
         assert!(serialized.contains("[runtime_homes]"));
@@ -273,7 +253,6 @@ mod tests {
             .expect("parse partial settings");
         let settings = AppSettings::from(parsed);
 
-        assert!(settings.hide_committed_files);
         assert!(!settings.show_read_files);
         assert!(settings.runtime_homes.codex.is_empty());
         assert_eq!(settings.descriptions.claude.model, "claude-haiku-4-5");

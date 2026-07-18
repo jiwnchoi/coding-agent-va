@@ -239,27 +239,56 @@ fn truncate_title(text: &str, max_chars: usize) -> String {
     format!("{truncated}…")
 }
 
-fn strip_image_attachment_markers(text: &str) -> String {
+pub(crate) fn strip_image_attachment_markers(text: &str) -> String {
     let mut sanitized = String::with_capacity(text.len());
     let mut remaining = text;
 
-    while let Some(marker_start) = remaining.find("<image ") {
+    while let Some(marker_start) = remaining.find("<image name=") {
         sanitized.push_str(&remaining[..marker_start]);
 
         let after_marker_start = &remaining[marker_start..];
-        let Some(marker_end) = after_marker_start.find('>') else {
+        if let Some(block_end) = after_marker_start.find("</image>") {
+            remaining = &after_marker_start[block_end + "</image>".len()..];
+            continue;
+        }
+        let Some(opening_tag_end) = after_marker_start.find('>') else {
             sanitized.push_str(after_marker_start);
             return sanitized;
         };
 
-        remaining = &after_marker_start[marker_end + 1..];
+        remaining = &after_marker_start[opening_tag_end + 1..];
     }
 
     sanitized.push_str(remaining);
-    sanitized
+    let mut lines = Vec::new();
+    for line in sanitized.lines() {
+        let trimmed = line.trim();
+        if is_image_reference(trimmed) {
+            continue;
+        }
+        if trimmed.is_empty() {
+            if !lines.is_empty() && lines.last().is_some_and(|line: &&str| !line.is_empty()) {
+                lines.push("");
+            }
+            continue;
+        }
+        lines.push(line);
+    }
+    if lines.last() == Some(&"") {
+        lines.pop();
+    }
+    lines.join("\n")
 }
 
-fn is_metadata_prompt(text: &str) -> bool {
+fn is_image_reference(text: &str) -> bool {
+    text.strip_prefix("[Image #")
+        .and_then(|value| value.strip_suffix(']'))
+        .is_some_and(|number| {
+            !number.is_empty() && number.chars().all(|character| character.is_ascii_digit())
+        })
+}
+
+pub(crate) fn is_metadata_prompt(text: &str) -> bool {
     if text.starts_with("# AGENTS.md instructions") {
         return true;
     }
@@ -270,7 +299,7 @@ fn is_metadata_prompt(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_codex_session_id, normalize_title};
+    use super::{extract_codex_session_id, normalize_title, strip_image_attachment_markers};
 
     #[test]
     fn extracts_full_codex_session_id_from_rollout_name() {
@@ -288,5 +317,24 @@ mod tests {
         let title = format!("{}\n{}", "a".repeat(119), "b".repeat(10));
 
         assert_eq!(normalize_title(title), format!("{}…", "a".repeat(119)));
+    }
+
+    #[test]
+    fn strips_serialized_image_attachments_and_references() {
+        let prompt = r#"<image name=[Image #1]
+path="/tmp/clipboard.png">
+
+</image>
+
+[Image #1]
+
+Keep this user request.
+
+[ordinary note]"#;
+
+        assert_eq!(
+            strip_image_attachment_markers(prompt),
+            "Keep this user request.\n\n[ordinary note]"
+        );
     }
 }

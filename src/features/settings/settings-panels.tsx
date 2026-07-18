@@ -115,17 +115,6 @@ export function GraphSettings({
           />
         }
       />
-      <SettingRow
-        title="Committed files"
-        description="Hide committed files to keep activity and the graph focused on outstanding changes."
-        control={
-          <ToggleControl
-            label="Hide committed files"
-            checked={settings.hideCommittedFiles}
-            onChange={(hideCommittedFiles) => onChange({ hideCommittedFiles })}
-          />
-        }
-      />
     </div>
   );
 }

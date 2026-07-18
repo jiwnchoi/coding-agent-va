@@ -36,31 +36,40 @@ pub(crate) fn read_tool_call_file_activity(
         };
         let timestamp_ms = entry_timestamp_ms(&json);
 
-        if !matches!(json_str(&json, &["type"]), Some("message" | "assistant")) {
-            continue;
-        }
-        let Some(message) = json.get("message") else {
-            continue;
-        };
-        if json_str(message, &["role"]) != Some("assistant") {
-            continue;
-        }
-        let Some(content) = message.get("content").and_then(|value| value.as_array()) else {
-            continue;
-        };
-
-        for item in content {
-            collect_tool_call_activity(
-                item,
-                schema,
-                workspace_root.as_deref(),
-                timestamp_ms,
-                &mut activity,
-            );
-        }
+        collect_tool_call_entry_activity(
+            &json,
+            schema,
+            workspace_root.as_deref(),
+            timestamp_ms,
+            &mut activity,
+        );
     }
 
     Ok(activity)
+}
+
+pub(crate) fn collect_tool_call_entry_activity(
+    json: &serde_json::Value,
+    schema: ToolSchema,
+    workspace_root: Option<&Path>,
+    timestamp_ms: u64,
+    activity: &mut ActivityAccumulator,
+) {
+    if !matches!(json_str(json, &["type"]), Some("message" | "assistant")) {
+        return;
+    }
+    let Some(message) = json.get("message") else {
+        return;
+    };
+    if json_str(message, &["role"]) != Some("assistant") {
+        return;
+    }
+    let Some(content) = message.get("content").and_then(|value| value.as_array()) else {
+        return;
+    };
+    for item in content {
+        collect_tool_call_activity(item, schema, workspace_root, timestamp_ms, activity);
+    }
 }
 
 fn collect_tool_call_activity(

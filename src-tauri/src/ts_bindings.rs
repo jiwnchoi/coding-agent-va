@@ -6,10 +6,11 @@ use std::process::{Command, Stdio};
 use ts_rs::{Config, TS};
 
 use crate::agent_session::{
-    AgentRuntimeSource, AgentSessionFileActivity, AgentSessionFileDiff,
+    AgentRuntimeSource, AgentSessionDetails, AgentSessionFileActivity, AgentSessionFileDiff,
     AgentSessionImpactedFileRelation, AgentSessionList, AgentSessionNodeDescriptionRequest,
     AgentSessionNodeDescriptionResponse, AgentSessionNodeDescriptionStreamEvent,
-    AgentSessionProvider, AgentSessionSummary, DescriptionGraphNode, DescriptionGraphRelation,
+    AgentSessionPromptTurn, AgentSessionProvider, AgentSessionSummary, AgentSessionTask,
+    AgentSessionTaskStatus, DescriptionGraphNode, DescriptionGraphRelation,
     SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration, SessionWatchTarget,
 };
 use crate::app_config::{
@@ -61,6 +62,10 @@ fn generated_typescript_bindings() -> String {
     push_binding::<AgentRuntimeSource>(&mut bindings, &config);
     push_binding::<AgentSessionSummary>(&mut bindings, &config);
     push_binding::<AgentSessionList>(&mut bindings, &config);
+    push_binding::<AgentSessionTaskStatus>(&mut bindings, &config);
+    push_binding::<AgentSessionTask>(&mut bindings, &config);
+    push_binding::<AgentSessionDetails>(&mut bindings, &config);
+    push_binding::<AgentSessionPromptTurn>(&mut bindings, &config);
     push_binding::<SessionWatchTarget>(&mut bindings, &config);
     push_binding::<SessionWatchPlan>(&mut bindings, &config);
     push_binding::<SessionWatchRegistration>(&mut bindings, &config);

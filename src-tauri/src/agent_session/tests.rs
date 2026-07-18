@@ -57,7 +57,6 @@ fn pi_protocol_lists_sessions_and_extracts_file_activity() {
         .read_file_activity(
             &transcript_path,
             Some(workspace.to_str().expect("utf8 workspace")),
-            true,
         )
         .expect("read activity");
     assert_eq!(
@@ -132,7 +131,6 @@ fn claude_protocol_lists_sessions_and_extracts_file_activity() {
         .read_file_activity(
             &transcript_path,
             Some(workspace.to_str().expect("utf8 workspace")),
-            true,
         )
         .expect("read activity");
     assert_eq!(

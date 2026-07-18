@@ -2,21 +2,24 @@ mod claude;
 mod codex;
 mod pi;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 pub(crate) use claude::ClaudeSessionProtocol;
 pub(crate) use codex::CodexSessionProtocol;
 pub(crate) use pi::PiSessionProtocol;
 
+use super::activity::ActivityAccumulator;
+#[cfg(test)]
 use super::activity::{
-    filter_written_files_by_git_status, remove_edited_files_from_read_files,
-    resolve_impacted_file_relations, sort_file_activity, ActivityAccumulator,
+    remove_edited_files_from_read_files, resolve_impacted_file_relations, sort_file_activity,
 };
 use super::titles::normalize_title;
-use super::types::{
-    AgentRuntimeSource, AgentSessionFileActivity, AgentSessionProvider, AgentSessionSummary,
-};
+#[cfg(test)]
+use super::types::AgentSessionFileActivity;
+use super::types::{AgentRuntimeSource, AgentSessionProvider, AgentSessionSummary};
 
 #[derive(Clone)]
 pub(crate) struct AgentSessionCandidate {
@@ -41,24 +44,14 @@ pub(crate) trait AgentSessionProtocol: Send + Sync {
         cwd: Option<&str>,
     ) -> Result<ActivityAccumulator, String>;
 
+    #[cfg(test)]
     fn read_file_activity(
         &self,
         transcript_path: &Path,
         cwd: Option<&str>,
-        hide_committed_files: bool,
     ) -> Result<AgentSessionFileActivity, String> {
         let mut activity = self.collect_file_activity(transcript_path, cwd)?;
 
-        if hide_committed_files {
-            filter_written_files_by_git_status(
-                cwd,
-                &mut activity.edited_files,
-                &mut activity.deleted_files,
-            );
-            activity
-                .edit_fragments
-                .retain(|path, _| activity.edited_files.contains_key(path));
-        }
         remove_edited_files_from_read_files(cwd, &mut activity.read_files, &activity.edited_files);
         let impacted_relations = resolve_impacted_file_relations(
             cwd,
@@ -137,13 +130,19 @@ pub(crate) fn build_session_summary(
     runtime_home: &Path,
     updated_at_ms: u64,
 ) -> AgentSessionSummary {
+    let transcript_path = transcript_path.display().to_string();
     AgentSessionSummary {
-        id: format!("{}:{}", provider_key(provider), provider_session_id),
+        id: format!(
+            "{}:{}:{}",
+            provider_key(provider),
+            provider_session_id,
+            transcript_path
+        ),
         provider,
         provider_session_id,
         provider_label: provider.label().to_string(),
         title: normalize_title(title),
-        transcript_path: transcript_path.display().to_string(),
+        transcript_path,
         cwd,
         runtime_home: runtime_home.display().to_string(),
         updated_at_ms,
@@ -155,5 +154,37 @@ pub(crate) fn provider_key(provider: AgentSessionProvider) -> &'static str {
         AgentSessionProvider::Codex => "codex",
         AgentSessionProvider::Claude => "claude",
         AgentSessionProvider::Pi => "pi",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_session_summary;
+    use crate::agent_session::types::AgentSessionProvider;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn transcript_path_distinguishes_worktrees_sharing_a_provider_session() {
+        let main = build_session_summary(
+            AgentSessionProvider::Claude,
+            "shared-session".to_string(),
+            "Main".to_string(),
+            PathBuf::from("/repo/main/session.jsonl"),
+            Some("/repo/main".to_string()),
+            Path::new("/runtime"),
+            1,
+        );
+        let worktree = build_session_summary(
+            AgentSessionProvider::Claude,
+            "shared-session".to_string(),
+            "Worktree".to_string(),
+            PathBuf::from("/repo/worktree/session.jsonl"),
+            Some("/repo/worktree".to_string()),
+            Path::new("/runtime"),
+            2,
+        );
+
+        assert_ne!(main.id, worktree.id);
+        assert_eq!(main.provider_session_id, worktree.provider_session_id);
     }
 }

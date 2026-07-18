@@ -122,7 +122,7 @@ export function useAgentSessionWatchRefresh(
     let refreshInFlight = false;
     let refreshQueued = false;
     let pendingSessionsRefresh = false;
-    let pendingFileActivityRefresh = false;
+    let pendingSessionDetailsRefresh = false;
     const activeWatchIds = new Set(watchRegistrations.map((registration) => registration.watchId));
     const gitIndexPaths = new Set(
       watchRegistrations
@@ -149,27 +149,30 @@ export function useAgentSessionWatchRefresh(
 
       refreshInFlight = true;
       const shouldRefreshSessions = pendingSessionsRefresh;
-      const shouldRefreshFileActivity = pendingFileActivityRefresh;
+      const shouldRefreshSessionDetails = pendingSessionDetailsRefresh;
       pendingSessionsRefresh = false;
-      pendingFileActivityRefresh = false;
+      pendingSessionDetailsRefresh = false;
 
       try {
         if (shouldRefreshSessions) {
           await queryClient.invalidateQueries({ queryKey: ["agent-sessions"] });
         }
 
-        if (!disposed && shouldRefreshFileActivity) {
+        if (!disposed && shouldRefreshSessionDetails) {
           const selectedSessionId = selectedSessionIdRef.current;
           if (selectedSessionId) {
             await queryClient.invalidateQueries({
-              queryKey: ["session-file-activity", selectedSessionId],
+              queryKey: ["session-details", selectedSessionId],
             });
           }
         }
       } finally {
         refreshInFlight = false;
 
-        if (!disposed && (refreshQueued || pendingSessionsRefresh || pendingFileActivityRefresh)) {
+        if (
+          !disposed &&
+          (refreshQueued || pendingSessionsRefresh || pendingSessionDetailsRefresh)
+        ) {
           refreshQueued = false;
           scheduleRefresh();
         }
@@ -193,10 +196,11 @@ export function useAgentSessionWatchRefresh(
       }
 
       pendingSessionsRefresh ||= !isGitIndexOnlyChange(changedPaths, gitIndexPaths);
-      pendingFileActivityRefresh ||= selectedSessionBelongsToProvider(
+      pendingSessionDetailsRefresh ||= selectedSessionInputChanged(
         sessionsRef.current,
         selectedSessionIdRef.current,
-        payload.provider
+        payload.provider,
+        changedPaths
       );
 
       scheduleRefresh();
@@ -236,12 +240,25 @@ function isGitIndexOnlyChange(changedPaths: Set<string>, gitIndexPaths: Set<stri
   return true;
 }
 
-function selectedSessionBelongsToProvider(
+function selectedSessionInputChanged(
   sessions: AgentSessionSummary[],
   selectedSessionId: string,
-  provider: AgentRuntimeSource["provider"]
+  provider: AgentRuntimeSource["provider"],
+  changedPaths: Set<string>
 ) {
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
+  if (!selectedSession || selectedSession.provider !== provider) {
+    return false;
+  }
+  if (changedPaths.has(normalizeWatchPath(selectedSession.transcriptPath))) {
+    return true;
+  }
+  if (provider !== "claude") {
+    return false;
+  }
 
-  return selectedSession?.provider === provider;
+  const taskDirectory = normalizeWatchPath(
+    `${selectedSession.runtimeHome}/tasks/${selectedSession.providerSessionId}`
+  );
+  return [...changedPaths].some((path) => path.startsWith(`${taskDirectory}/`));
 }

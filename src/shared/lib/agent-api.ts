@@ -16,8 +16,8 @@ import {
 } from "valibot";
 
 import type {
-  AgentSessionFileActivity,
   AgentSessionFileDiff,
+  AgentSessionDetails,
   AgentSessionList,
   ArchitectureGraph,
   AppSettings,
@@ -51,6 +51,32 @@ const activitySchema = object({
   deletedFiles: array(string()),
   impactedRelations: array(
     object({ changedFile: string(), impactedFile: string(), importSpecifier: string() })
+  ),
+});
+const taskStatus = picklist(["pending", "in_progress", "completed"]);
+const taskSchema = object({
+  id: string(),
+  nativeId: nullable(string()),
+  subject: string(),
+  description: nullable(string()),
+  activeForm: nullable(string()),
+  status: taskStatus,
+  dependsOn: array(string()),
+  position: number(),
+  summary: nullable(string()),
+  fileActivity: activitySchema,
+});
+const detailsSchema = object({
+  fileActivity: activitySchema,
+  turns: array(
+    object({
+      id: string(),
+      prompts: array(string()),
+      summary: nullable(string()),
+      tasks: array(taskSchema),
+      fileActivity: activitySchema,
+      startedAtMs: number(),
+    })
   ),
 });
 const diffSchema = object({
@@ -88,7 +114,6 @@ const settingsSchema = object({
   theme: picklist(["system", "light", "dark"]),
   font: picklist(["geist", "system-sans", "system-serif"]),
   monacoTheme: picklist(["system", "light", "dark"]),
-  hideCommittedFiles: boolean(),
   showReadFiles: boolean(),
   keyboardShortcuts: record(string(), string()),
   runtimeHomes: object({ claude: string(), codex: string(), pi: string() }),
@@ -101,8 +126,7 @@ const settingsSchema = object({
 
 export const queryKeys = {
   sessions: (runtimeHomes: Record<string, string>) => ["agent-sessions", runtimeHomes] as const,
-  fileActivity: (sessionId: string, hideCommittedFiles: boolean) =>
-    ["session-file-activity", sessionId, hideCommittedFiles] as const,
+  sessionDetails: (sessionId: string) => ["session-details", sessionId] as const,
   fileDiff: (cwd: string | null, filePath: string) => ["session-file-diff", cwd, filePath] as const,
   workspaceGraph: (workspacePath: string) => ["workspace-graph", workspacePath] as const,
 };
@@ -117,13 +141,14 @@ export async function listAgentSessions(
     await invoke<unknown>("list_agent_sessions", { runtimeHomes, offset, limit })
   );
 }
-export async function getAgentSessionFileActivity(args: {
+export async function getAgentSessionDetails(args: {
   provider: string;
+  providerSessionId: string;
   transcriptPath: string;
+  runtimeHome: string;
   cwd: string | null;
-  hideCommittedFiles: boolean;
-}): Promise<AgentSessionFileActivity> {
-  return parse(activitySchema, await invoke<unknown>("get_agent_session_file_activity", args));
+}): Promise<AgentSessionDetails> {
+  return parse(detailsSchema, await invoke<unknown>("get_agent_session_details", args));
 }
 export async function getAgentSessionFileDiff(args: {
   filePath: string;

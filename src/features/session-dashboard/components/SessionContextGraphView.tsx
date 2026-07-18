@@ -41,6 +41,7 @@ const viewportByGraphKey = new Map<string, Viewport>();
 type SessionContextGraphViewProps = {
   descriptionSettings: DescriptionSettings;
   fileActivity: AgentSessionFileActivity;
+  graphScopeKey: string;
   isFileActivityLoading: boolean;
   selectedActivityFile: SelectedActivityFile | null;
   selectedSession: AgentSessionSummary | null;
@@ -51,6 +52,7 @@ type SessionContextGraphViewProps = {
 export function SessionContextGraphView({
   descriptionSettings,
   fileActivity,
+  graphScopeKey,
   isFileActivityLoading,
   selectedActivityFile,
   selectedSession,
@@ -86,7 +88,9 @@ export function SessionContextGraphView({
     reset: resetNodeDescription,
   } = useNodeDescription();
   const nodes = contextGraph.nodes;
-  const graphKey = selectedSession ? `${selectedSession.id}:${selectedFilePath}` : null;
+  const graphKey = selectedSession
+    ? `${selectedSession.id}:${graphScopeKey}:${selectedFilePath}`
+    : null;
   const edges = useMemo(() => {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     return [

@@ -1,0 +1,4 @@
+.turn {
+  background: color-mix(in oklch, var(--card) 96%, var(--muted));
+  overflow: hidden;
+}

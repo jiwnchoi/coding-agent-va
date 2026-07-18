@@ -3,16 +3,11 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
-use super::file_system::{file_updated_at_ms, resolve_existing_dir};
-use super::git::read_git_index_updated_at_ms;
+use super::file_system::resolve_existing_dir;
 use super::paths::normalize_absolute_activity_path;
 use super::protocols::{AgentSessionCandidate, AgentSessionProtocol};
-use super::state::{
-    AgentSessionWatchState, FileActivityCacheEntry, FileActivityCacheKey, SessionListCacheKey,
-};
-use super::types::{
-    AgentSessionFileActivity, AgentSessionProvider, AgentSessionSummary, SessionWatchPlan,
-};
+use super::state::{AgentSessionWatchState, SessionListCacheKey};
+use super::types::{AgentSessionProvider, AgentSessionSummary, SessionWatchPlan};
 use super::watch::build_session_watch_plan;
 
 pub(crate) fn create_watch_plan_cached(
@@ -72,45 +67,6 @@ pub(crate) fn cache_loaded_sessions(
     }
 }
 
-pub(crate) fn read_file_activity_cached(
-    state: &AgentSessionWatchState,
-    provider: AgentSessionProvider,
-    transcript_path: &Path,
-    cwd: Option<&str>,
-    hide_committed_files: bool,
-) -> Result<AgentSessionFileActivity, String> {
-    let key = file_activity_cache_key(provider, transcript_path, cwd, hide_committed_files);
-    let transcript_updated_at_ms = file_updated_at_ms(transcript_path);
-    let git_index_updated_at_ms = cwd.and_then(read_git_index_updated_at_ms);
-
-    if let Ok(cache) = state.file_activities.lock() {
-        if let Some(entry) = cache.get(&key) {
-            if entry.transcript_updated_at_ms == transcript_updated_at_ms
-                && entry.git_index_updated_at_ms == git_index_updated_at_ms
-            {
-                return Ok(entry.activity.clone());
-            }
-        }
-    }
-
-    let activity =
-        provider
-            .protocol()
-            .read_file_activity(transcript_path, cwd, hide_committed_files)?;
-    if let Ok(mut cache) = state.file_activities.lock() {
-        cache.insert(
-            key,
-            FileActivityCacheEntry {
-                transcript_updated_at_ms,
-                git_index_updated_at_ms,
-                activity: activity.clone(),
-            },
-        );
-    }
-
-    Ok(activity)
-}
-
 pub(crate) fn invalidate_watch_caches(
     app: &AppHandle,
     provider: AgentSessionProvider,
@@ -133,21 +89,6 @@ pub(crate) fn invalidate_watch_caches(
             cache.remove(&key);
         }
     }
-
-    let git_index_changed = changed_paths
-        .iter()
-        .any(|path| git_index_path_set.contains(path));
-    let changed_path_set = changed_paths
-        .iter()
-        .map(String::as_str)
-        .collect::<HashSet<_>>();
-
-    if let Ok(mut cache) = state.file_activities.lock() {
-        cache.retain(|key, _| {
-            key.provider != provider
-                || (!changed_path_set.contains(key.transcript_path.as_str()) && !git_index_changed)
-        });
-    };
 }
 
 fn loaded_sessions_for_runtime_home(
@@ -172,19 +113,5 @@ fn session_list_cache_key(
     SessionListCacheKey {
         provider,
         runtime_home: normalize_absolute_activity_path(runtime_home),
-    }
-}
-
-fn file_activity_cache_key(
-    provider: AgentSessionProvider,
-    transcript_path: &Path,
-    cwd: Option<&str>,
-    hide_committed_files: bool,
-) -> FileActivityCacheKey {
-    FileActivityCacheKey {
-        provider,
-        transcript_path: normalize_absolute_activity_path(transcript_path),
-        cwd: cwd.map(|path| normalize_absolute_activity_path(Path::new(path))),
-        hide_committed_files,
     }
 }

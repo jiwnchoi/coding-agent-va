@@ -22,7 +22,6 @@ export type AppSettings = {
   theme: AppTheme;
   font: AppFont;
   monacoTheme: MonacoTheme;
-  hideCommittedFiles: boolean;
   showReadFiles: boolean;
   keyboardShortcuts: { [key in string]: string };
   runtimeHomes: RuntimeHomes;
@@ -64,6 +63,35 @@ export type AgentSessionList = {
   sessions: Array<AgentSessionSummary>;
   hasMore: boolean;
   nextOffset: number;
+};
+
+export type AgentSessionTaskStatus = "pending" | "in_progress" | "completed";
+
+export type AgentSessionTask = {
+  id: string;
+  nativeId: string | null;
+  subject: string;
+  description: string | null;
+  activeForm: string | null;
+  status: AgentSessionTaskStatus;
+  dependsOn: Array<string>;
+  position: number;
+  summary: string | null;
+  fileActivity: AgentSessionFileActivity;
+};
+
+export type AgentSessionDetails = {
+  fileActivity: AgentSessionFileActivity;
+  turns: Array<AgentSessionPromptTurn>;
+};
+
+export type AgentSessionPromptTurn = {
+  id: string;
+  prompts: Array<string>;
+  summary: string | null;
+  tasks: Array<AgentSessionTask>;
+  fileActivity: AgentSessionFileActivity;
+  startedAtMs: number;
 };
 
 export type SessionWatchTarget = {

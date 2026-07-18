@@ -90,8 +90,6 @@ function App() {
   const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
     useSessionFileDiff(selectedSession, selectedActivityFile);
   const editorTheme = useEditorTheme(settings.monacoTheme);
-  const selectedSessionLabel =
-    selectedSession?.title ?? (isLoading ? "Loading sessions..." : "No sessions");
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
@@ -266,24 +264,17 @@ function App() {
           />
         ) : (
           <>
-            <div
-              className={cn(
-                styles.contextGraphTitle,
-                "border-border text-card-foreground absolute left-4 z-[6] truncate rounded-lg border px-3 py-2.5 text-sm leading-5 font-medium"
-              )}>
-              {selectedSessionLabel}
-            </div>
             <div className="min-w-0 flex-1">
               <div className="relative h-full min-h-0 w-full">
                 {selectedSession ? (
                   <SessionContextGraphTab
                     key={selectedSession.id}
                     descriptionSettings={settings.descriptions}
-                    hideCommittedFiles={settings.hideCommittedFiles}
                     showReadFiles={settings.showReadFiles}
                     isSessionListLoading={isLoading}
                     selectedActivityFile={selectedActivityFile}
                     selectedSession={selectedSession}
+                    onScopeChange={handleCloseFileViewer}
                     onSelectFile={setSelectedActivityFile}
                   />
                 ) : null}

@@ -7,7 +7,7 @@ mod shared;
 mod ts_bindings;
 
 use agent_session::{
-    describe_agent_session_node, get_agent_session_file_activity, get_agent_session_file_diff,
+    describe_agent_session_node, get_agent_session_details, get_agent_session_file_diff,
     list_agent_sessions, manage_agent_session_watch_state, plan_agent_session_watch,
     start_agent_session_watch, stop_agent_session_watch,
 };
@@ -54,8 +54,8 @@ pub fn run() {
             get_logs,
             clear_logs,
             describe_agent_session_node,
-            get_agent_session_file_activity,
             get_agent_session_file_diff,
+            get_agent_session_details,
             list_agent_sessions,
             plan_agent_session_watch,
             start_agent_session_watch,

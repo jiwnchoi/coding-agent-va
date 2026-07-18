@@ -10,17 +10,18 @@ use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
     cache_loaded_sessions, create_watch_plan_cached, invalidate_watch_caches,
-    list_session_candidates_cached, read_file_activity_cached,
+    list_session_candidates_cached,
 };
 use super::description::{describe_session_node, NodeDescriptionCacheState};
 use super::file_system::resolve_existing_dir;
 use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
 use super::protocols::AgentSessionCandidate;
+use super::session_details::read_session_details;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
-    AgentSessionFileActivity, AgentSessionFileDiff, AgentSessionList,
+    AgentSessionDetails, AgentSessionFileDiff, AgentSessionList,
     AgentSessionNodeDescriptionRequest, AgentSessionNodeDescriptionResponse,
     AgentSessionNodeDescriptionStreamEvent, AgentSessionProvider, AgentSessionSummary,
     SessionWatchEventPayload, SessionWatchPlan, SessionWatchRegistration,
@@ -31,6 +32,26 @@ use super::watch::{
 };
 
 const MAX_SESSION_PAGE_SIZE: usize = 100;
+
+#[tauri::command]
+pub async fn get_agent_session_details(
+    provider: AgentSessionProvider,
+    provider_session_id: String,
+    transcript_path: String,
+    runtime_home: String,
+    cwd: Option<String>,
+) -> Result<AgentSessionDetails, String> {
+    run_blocking("session details", move || {
+        read_session_details(
+            provider,
+            &provider_session_id,
+            &PathBuf::from(transcript_path),
+            &PathBuf::from(runtime_home),
+            cwd.as_deref(),
+        )
+    })
+    .await
+}
 
 #[tauri::command]
 pub async fn describe_agent_session_node(
@@ -182,27 +203,6 @@ pub async fn plan_agent_session_watch(
     run_blocking("session watch planning", move || {
         let protocol = provider.protocol();
         create_watch_plan_cached(&state, protocol.as_ref(), &PathBuf::from(runtime_home))
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn get_agent_session_file_activity(
-    state: State<'_, AgentSessionWatchState>,
-    provider: AgentSessionProvider,
-    transcript_path: String,
-    cwd: Option<String>,
-    hide_committed_files: bool,
-) -> Result<AgentSessionFileActivity, String> {
-    let state = state.inner().clone();
-    run_blocking("session file activity", move || {
-        read_file_activity_cached(
-            &state,
-            provider,
-            &PathBuf::from(transcript_path),
-            cwd.as_deref(),
-            hide_committed_files,
-        )
     })
     .await
 }
