@@ -35,7 +35,7 @@ export function SessionTabBar({
               )}>
               <span
                 className={cn(
-                  "size-2 shrink-0 rounded-full bg-orange-500",
+                  "bg-muted-foreground size-2 shrink-0 rounded-full",
                   !isChecked && "bg-green-500"
                 )}
               />

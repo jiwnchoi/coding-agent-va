@@ -12,6 +12,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   font: "geist",
   monacoTheme: "system",
   hideCommittedFiles: true,
+  showReadFiles: false,
   keyboardShortcuts: {},
   runtimeHomes: { claude: "", codex: "", pi: "" },
   descriptions: {

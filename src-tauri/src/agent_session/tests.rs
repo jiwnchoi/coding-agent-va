@@ -3,10 +3,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use rusqlite::Connection;
 use watchexec::WatchedPath;
 
 use super::paths::normalize_absolute_activity_path;
-use super::protocols::{AgentSessionProtocol, ClaudeSessionProtocol, PiSessionProtocol};
+use super::protocols::{
+    AgentSessionProtocol, ClaudeSessionProtocol, CodexSessionProtocol, PiSessionProtocol,
+};
 use super::types::{AgentSessionProvider, SessionWatchTarget};
 use super::watch::{push_watch_target, watched_paths_from_targets};
 
@@ -140,6 +143,42 @@ fn claude_protocol_lists_sessions_and_extracts_file_activity() {
         activity.edited_files,
         vec![normalize_absolute_activity_path(&edited_path)]
     );
+}
+
+#[test]
+fn codex_protocol_reads_titles_from_the_state_database() {
+    let runtime_home = create_temp_dir("codex-database-title");
+    let sessions_dir = runtime_home.join("sessions/2026/07/17");
+    fs::create_dir_all(&sessions_dir).expect("create sessions dir");
+    let session_id = "019f7038-0bdb-73b0-98d9-62198f30edae";
+    let transcript_path =
+        sessions_dir.join(format!("rollout-2026-07-17T22-18-24-{session_id}.jsonl"));
+    fs::write(
+        &transcript_path,
+        r#"{"type":"session_meta","payload":{"cwd":"/tmp/database-title-workspace"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Title from rollout log"}]}}"#,
+    )
+    .expect("write Codex rollout");
+
+    let connection =
+        Connection::open(runtime_home.join("state_5.sqlite")).expect("create Codex state database");
+    connection
+        .execute_batch(
+            "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL);\
+             INSERT INTO threads (id, title) VALUES (\
+               '019f7038-0bdb-73b0-98d9-62198f30edae',\
+               'Title from state database'\
+             );",
+        )
+        .expect("seed Codex thread title");
+    drop(connection);
+
+    let protocol = CodexSessionProtocol;
+    let candidates = protocol.list_session_candidates(&runtime_home);
+    let sessions = protocol.hydrate_sessions(&runtime_home, &candidates);
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].title, "Title from state database");
 }
 
 #[test]

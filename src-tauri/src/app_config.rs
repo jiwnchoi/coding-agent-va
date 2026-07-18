@@ -115,6 +115,7 @@ pub struct AppSettings {
     pub font: AppFont,
     pub monaco_theme: MonacoTheme,
     pub hide_committed_files: bool,
+    pub show_read_files: bool,
     pub keyboard_shortcuts: BTreeMap<String, String>,
     pub runtime_homes: RuntimeHomes,
     pub descriptions: DescriptionSettings,
@@ -127,6 +128,7 @@ impl Default for AppSettings {
             font: AppFont::default(),
             monaco_theme: MonacoTheme::default(),
             hide_committed_files: true,
+            show_read_files: false,
             keyboard_shortcuts: BTreeMap::new(),
             runtime_homes: RuntimeHomes::default(),
             descriptions: DescriptionSettings::default(),
@@ -141,6 +143,7 @@ struct StoredAppSettings {
     font: AppFont,
     monaco_theme: MonacoTheme,
     hide_committed_files: bool,
+    show_read_files: bool,
     keyboard_shortcuts: BTreeMap<String, String>,
     runtime_homes: RuntimeHomes,
     descriptions: DescriptionSettings,
@@ -159,6 +162,7 @@ impl From<StoredAppSettings> for AppSettings {
             font: settings.font,
             monaco_theme: settings.monaco_theme,
             hide_committed_files: settings.hide_committed_files,
+            show_read_files: settings.show_read_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
             descriptions: settings.descriptions,
@@ -173,6 +177,7 @@ impl From<AppSettings> for StoredAppSettings {
             font: settings.font,
             monaco_theme: settings.monaco_theme,
             hide_committed_files: settings.hide_committed_files,
+            show_read_files: settings.show_read_files,
             keyboard_shortcuts: settings.keyboard_shortcuts,
             runtime_homes: settings.runtime_homes,
             descriptions: settings.descriptions,
@@ -256,6 +261,7 @@ mod tests {
         let settings = AppSettings::from(parsed);
 
         assert!(settings.hide_committed_files);
+        assert!(!settings.show_read_files);
         assert!(serialized.contains("monaco_theme = \"system\""));
         assert!(serialized.contains("[runtime_homes]"));
         assert!(serialized.contains("model = \"gpt-5.6-luna\""));
@@ -268,6 +274,7 @@ mod tests {
         let settings = AppSettings::from(parsed);
 
         assert!(settings.hide_committed_files);
+        assert!(!settings.show_read_files);
         assert!(settings.runtime_homes.codex.is_empty());
         assert_eq!(settings.descriptions.claude.model, "claude-haiku-4-5");
     }

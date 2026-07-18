@@ -89,6 +89,7 @@ const settingsSchema = object({
   font: picklist(["geist", "system-sans", "system-serif"]),
   monacoTheme: picklist(["system", "light", "dark"]),
   hideCommittedFiles: boolean(),
+  showReadFiles: boolean(),
   keyboardShortcuts: record(string(), string()),
   runtimeHomes: object({ claude: string(), codex: string(), pi: string() }),
   descriptions: object({

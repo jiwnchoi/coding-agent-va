@@ -103,17 +103,30 @@ export function GraphSettings({
   onChange: (update: Partial<AppSettings>) => void;
 }) {
   return (
-    <SettingRow
-      title="Committed files"
-      description="Hide committed files to keep activity and the graph focused on outstanding changes."
-      control={
-        <ToggleControl
-          label="Hide committed files"
-          checked={settings.hideCommittedFiles}
-          onChange={(hideCommittedFiles) => onChange({ hideCommittedFiles })}
-        />
-      }
-    />
+    <div className="divide-border divide-y">
+      <SettingRow
+        title="Read files"
+        description="Show files that the agent read without editing."
+        control={
+          <ToggleControl
+            label="Show read files"
+            checked={settings.showReadFiles}
+            onChange={(showReadFiles) => onChange({ showReadFiles })}
+          />
+        }
+      />
+      <SettingRow
+        title="Committed files"
+        description="Hide committed files to keep activity and the graph focused on outstanding changes."
+        control={
+          <ToggleControl
+            label="Hide committed files"
+            checked={settings.hideCommittedFiles}
+            onChange={(hideCommittedFiles) => onChange({ hideCommittedFiles })}
+          />
+        }
+      />
+    </div>
   );
 }
 

@@ -3,17 +3,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use serde::Deserialize;
+use rusqlite::{Connection, OpenFlags};
 
 use super::json::{json_str, read_first_json_line};
 
 const SESSION_TITLE_MAX_CHARS: usize = 120;
-
-#[derive(Deserialize)]
-struct CodexSessionIndexEntry {
-    id: String,
-    thread_name: Option<String>,
-}
 
 #[derive(Default)]
 pub(crate) struct ClaudeSessionMetadata {
@@ -28,61 +22,43 @@ enum MessageSchema {
 }
 
 pub(crate) fn read_codex_session_titles(runtime_home: &Path) -> HashMap<String, String> {
-    let session_index_path = runtime_home.join("session_index.jsonl");
-    let Ok(file) = File::open(session_index_path) else {
+    let Ok(connection) = Connection::open_with_flags(
+        runtime_home.join("state_5.sqlite"),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return HashMap::new();
+    };
+    let Ok(mut statement) = connection.prepare("SELECT id, title FROM threads WHERE title <> ''")
+    else {
+        return HashMap::new();
+    };
+    let Ok(rows) = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) else {
         return HashMap::new();
     };
 
-    BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter_map(|line| serde_json::from_str::<CodexSessionIndexEntry>(&line).ok())
-        .filter_map(|entry| entry.thread_name.map(|title| (entry.id, title)))
+    rows.filter_map(Result::ok)
+        .map(|(id, title)| (id, normalize_title_whitespace(title)))
         .collect()
 }
 
 pub(crate) fn extract_codex_session_id(file_name: &str) -> Option<String> {
-    file_name
-        .strip_prefix("rollout-")?
-        .strip_suffix(".jsonl")?
-        .rsplit_once('-')
-        .map(|(_, session_id)| session_id.to_string())
+    const UUID_CHARS: usize = 36;
+
+    let stem = file_name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
+    let session_id = stem.get(stem.len().checked_sub(UUID_CHARS)?..)?;
+    (session_id.len() == UUID_CHARS
+        && session_id.chars().enumerate().all(|(index, character)| {
+            matches!(index, 8 | 13 | 18 | 23) && character == '-'
+                || !matches!(index, 8 | 13 | 18 | 23) && character.is_ascii_hexdigit()
+        }))
+    .then(|| session_id.to_string())
 }
 
 pub(crate) fn read_codex_session_meta_cwd(path: &Path) -> Option<String> {
     let json = read_first_json_line(path)?;
     json_str(&json, &["payload", "cwd"]).map(str::to_string)
-}
-
-pub(crate) fn read_codex_first_user_prompt_title(path: &Path) -> Option<String> {
-    let file = File::open(path).ok()?;
-
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) else {
-            continue;
-        };
-        if json_str(&json, &["type"]) != Some("response_item") {
-            continue;
-        }
-
-        let Some(payload) = json.get("payload") else {
-            continue;
-        };
-        if json_str(payload, &["type"]) != Some("message")
-            || json_str(payload, &["role"]) != Some("user")
-        {
-            continue;
-        }
-
-        let Some(content) = payload.get("content").and_then(|value| value.as_array()) else {
-            continue;
-        };
-        if let Some(title) = first_text_content_title(content, "input_text") {
-            return Some(title);
-        }
-    }
-
-    None
 }
 
 pub(crate) fn read_pi_session_name(path: &Path) -> Option<String> {
@@ -294,7 +270,18 @@ fn is_metadata_prompt(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_title;
+    use super::{extract_codex_session_id, normalize_title};
+
+    #[test]
+    fn extracts_full_codex_session_id_from_rollout_name() {
+        assert_eq!(
+            extract_codex_session_id(
+                "rollout-2026-07-17T22-18-24-019f7038-0bdb-73b0-98d9-62198f30edae.jsonl"
+            )
+            .as_deref(),
+            Some("019f7038-0bdb-73b0-98d9-62198f30edae")
+        );
+    }
 
     #[test]
     fn normalize_title_removes_newlines_before_truncating() {

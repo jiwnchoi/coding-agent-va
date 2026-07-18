@@ -198,7 +198,7 @@ function SessionPickerVirtualList({
                 <span
                   className={
                     isChecked
-                      ? "size-2 rounded-full bg-orange-500"
+                      ? "bg-muted-foreground size-2 rounded-full"
                       : "size-2 rounded-full bg-green-500"
                   }
                 />

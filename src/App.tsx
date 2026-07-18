@@ -280,6 +280,7 @@ function App() {
                     key={selectedSession.id}
                     descriptionSettings={settings.descriptions}
                     hideCommittedFiles={settings.hideCommittedFiles}
+                    showReadFiles={settings.showReadFiles}
                     isSessionListLoading={isLoading}
                     selectedActivityFile={selectedActivityFile}
                     selectedSession={selectedSession}

@@ -23,6 +23,7 @@ export type AppSettings = {
   font: AppFont;
   monacoTheme: MonacoTheme;
   hideCommittedFiles: boolean;
+  showReadFiles: boolean;
   keyboardShortcuts: { [key in string]: string };
   runtimeHomes: RuntimeHomes;
   descriptions: DescriptionSettings;

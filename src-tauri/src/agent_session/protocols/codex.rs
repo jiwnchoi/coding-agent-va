@@ -14,8 +14,7 @@ use crate::agent_session::file_system::{
 };
 use crate::agent_session::time::entry_timestamp_ms;
 use crate::agent_session::titles::{
-    extract_codex_session_id, read_codex_first_user_prompt_title, read_codex_session_meta_cwd,
-    read_codex_session_titles,
+    extract_codex_session_id, read_codex_session_meta_cwd, read_codex_session_titles,
 };
 use crate::agent_session::types::{AgentSessionProvider, AgentSessionSummary};
 
@@ -61,13 +60,9 @@ impl AgentSessionProtocol for CodexSessionProtocol {
                 let file_name = path.file_name()?.to_str()?;
                 let provider_session_id = extract_codex_session_id(file_name)?;
                 let cwd = read_codex_session_meta_cwd(path);
-                let title = read_codex_first_user_prompt_title(path)
-                    .or_else(|| {
-                        session_titles
-                            .get(&provider_session_id)
-                            .cloned()
-                            .map(crate::agent_session::titles::normalize_title_whitespace)
-                    })
+                let title = session_titles
+                    .get(&provider_session_id)
+                    .cloned()
                     .or_else(|| cwd.as_deref().and_then(directory_title))
                     .unwrap_or_else(|| provider_session_id.clone());
 
@@ -97,11 +92,6 @@ impl AgentSessionProtocol for CodexSessionProtocol {
                 "watch SQLite WAL updates".to_string(),
             ),
             (
-                runtime_home.join("history.jsonl"),
-                false,
-                "watch prompt history updates".to_string(),
-            ),
-            (
                 runtime_home.join("sessions"),
                 true,
                 "watch rollout session trees".to_string(),
@@ -116,7 +106,6 @@ impl AgentSessionProtocol for CodexSessionProtocol {
 
         if relative_path == Path::new("state_5.sqlite")
             || relative_path == Path::new("state_5.sqlite-wal")
-            || relative_path == Path::new("history.jsonl")
         {
             return true;
         }
