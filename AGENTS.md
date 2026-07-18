@@ -1,8 +1,10 @@
 ## Commit &amp; PR
 
 - [Build, Test, and Development Commands](docs/agents/build-test-and-development-commands.md)
+- [Code Style: TypeScript](docs/agents/code-style-ts.md)
 - [Commit Conventions](docs/agents/commit-conventions.md)
 - [PR Conventions](docs/agents/pr-conventions.md)
+- [Tauri MCP Debugging](docs/agents/tauri-mcp-debugging.md)
 - [Toolchains](docs/agents/toolchains.md)
 
 ## Documentation Maintenance

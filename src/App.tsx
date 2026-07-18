@@ -203,6 +203,7 @@ function App() {
 
   return (
     <div
+      data-testid="app-shell"
       className={cn(
         styles.appShell,
         "bg-background text-foreground relative h-screen overflow-hidden"
@@ -244,6 +245,7 @@ function App() {
           )}
           <button
             type="button"
+            data-testid="settings-toggle"
             data-window-control-exclusion
             aria-label={isSettingsOpen ? "Close settings" : "Open settings"}
             title="Settings (⌘,)"

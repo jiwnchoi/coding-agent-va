@@ -68,7 +68,7 @@ export function SettingsView({
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   return (
-    <main className="bg-background flex h-full min-h-0 w-full">
+    <main data-testid="settings-view" className="bg-background flex h-full min-h-0 w-full">
       <aside className="border-border bg-sidebar flex w-[18rem] shrink-0 flex-col border-r px-3 pt-5 pb-4">
         <button
           type="button"

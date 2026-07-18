@@ -101,22 +101,22 @@
 }
 
 .editedNode {
-  --context-graph-node-border-color: #2ca02c;
+  --context-graph-node-border-color: var(--activity-edited);
   border-color: var(--context-graph-node-border-color);
 }
 
 .deletedNode {
-  --context-graph-node-border-color: #d62728;
+  --context-graph-node-border-color: var(--activity-unread-impacted);
   border-color: var(--context-graph-node-border-color);
 }
 
 .readImpactedNode {
-  --context-graph-node-border-color: #ff7f0e;
+  --context-graph-node-border-color: var(--activity-read-impacted);
   border-color: var(--context-graph-node-border-color);
 }
 
 .unreadImpactedNode {
-  --context-graph-node-border-color: #d62728;
+  --context-graph-node-border-color: var(--activity-unread-impacted);
   border-color: var(--context-graph-node-border-color);
 }
 
@@ -153,17 +153,17 @@
 
 .impactEdge,
 .highlightedImpactEdge {
-  color: #ff7f0e;
+  color: var(--activity-read-impacted);
 }
 
 .unreadImpactEdge,
 .highlightedUnreadImpactEdge {
-  color: #d62728;
+  color: var(--activity-unread-impacted);
 }
 
 .impactEdge :global(.react-flow__edge-path),
 .highlightedImpactEdge :global(.react-flow__edge-path) {
-  stroke: #ff7f0e;
+  stroke: var(--activity-read-impacted);
   stroke-linecap: round;
   stroke-width: var(--context-graph-border-width);
 }
@@ -179,7 +179,7 @@
 
 .unreadImpactEdge :global(.react-flow__edge-path),
 .highlightedUnreadImpactEdge :global(.react-flow__edge-path) {
-  stroke: #d62728;
+  stroke: var(--activity-unread-impacted);
   stroke-linecap: round;
   stroke-width: var(--context-graph-border-width);
 }

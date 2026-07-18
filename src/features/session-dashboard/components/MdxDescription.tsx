@@ -1,5 +1,5 @@
 import { evaluate } from "@mdx-js/mdx";
-import type { ComponentPropsWithoutRef, ComponentType } from "react";
+import type { AnchorHTMLAttributes, ComponentPropsWithoutRef, ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { createHighlighter } from "shiki";
@@ -24,7 +24,13 @@ const languageAliases = new Map([
   ["md", "markdown"],
 ]);
 
-export function MdxDescription({ source }: { source: string }) {
+export function MdxDescription({
+  source,
+  onOpenFile,
+}: {
+  source: string;
+  onOpenFile?: (filePath: string) => void;
+}) {
   const [content, setContent] = useState<ComponentType | null>(null);
   const [renderError, setRenderError] = useState("");
 
@@ -57,9 +63,58 @@ export function MdxDescription({ source }: { source: string }) {
   }
 
   const Content = content as ComponentType<{
-    components?: { code: typeof HighlightedCode };
+    components?: {
+      a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => React.JSX.Element;
+      code: typeof HighlightedCode;
+    };
   }> | null;
-  return Content ? <Content components={{ code: HighlightedCode }} /> : null;
+  return Content ? (
+    <Content
+      components={{
+        a: (props) => <MarkdownLink {...props} onOpenFile={onOpenFile} />,
+        code: HighlightedCode,
+      }}
+    />
+  ) : null;
+}
+
+function MarkdownLink({
+  href,
+  onOpenFile,
+  onClick,
+  ...props
+}: AnchorHTMLAttributes<HTMLAnchorElement> & {
+  onOpenFile?: (filePath: string) => void;
+}) {
+  const filePath = href ? localFilePathFromHref(href) : null;
+
+  return (
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented && filePath && onOpenFile) {
+          event.preventDefault();
+          onOpenFile(filePath);
+        }
+      }}
+    />
+  );
+}
+
+function localFilePathFromHref(href: string) {
+  if (href.startsWith("#") || (/^[a-z][a-z\d+.-]*:/i.test(href) && !href.startsWith("file://"))) {
+    return null;
+  }
+
+  try {
+    const decodedHref = decodeURIComponent(href);
+    const path = decodedHref.startsWith("file://") ? new URL(decodedHref).pathname : decodedHref;
+    return path.split(/[?#]/, 1)[0]?.replace(/:\d+(?::\d+)?$/, "") || null;
+  } catch {
+    return null;
+  }
 }
 
 function HighlightedCode({ className, children, ...props }: ComponentPropsWithoutRef<"code">) {

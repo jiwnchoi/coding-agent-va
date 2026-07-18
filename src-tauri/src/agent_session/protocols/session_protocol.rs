@@ -1,25 +1,18 @@
-mod claude;
-mod codex;
-mod pi;
-
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-pub(crate) use claude::ClaudeSessionProtocol;
-pub(crate) use codex::CodexSessionProtocol;
-pub(crate) use pi::PiSessionProtocol;
-
-use super::activity::ActivityAccumulator;
+use super::{ClaudeSessionProtocol, CodexSessionProtocol, PiSessionProtocol};
+use crate::agent_session::activity::ActivityAccumulator;
 #[cfg(test)]
-use super::activity::{
+use crate::agent_session::activity::{
     remove_edited_files_from_read_files, resolve_impacted_file_relations, sort_file_activity,
 };
-use super::titles::normalize_title;
+use crate::agent_session::titles::normalize_title;
 #[cfg(test)]
-use super::types::AgentSessionFileActivity;
-use super::types::{AgentRuntimeSource, AgentSessionProvider, AgentSessionSummary};
+use crate::agent_session::types::AgentSessionFileActivity;
+use crate::agent_session::types::{AgentRuntimeSource, AgentSessionProvider, AgentSessionSummary};
 
 #[derive(Clone)]
 pub(crate) struct AgentSessionCandidate {

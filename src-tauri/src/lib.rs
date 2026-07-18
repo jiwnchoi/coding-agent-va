@@ -43,7 +43,16 @@ async fn index_workspace_graph(workspace_path: String) -> Result<ArchitectureGra
 pub fn run() {
     let _ =
         shared::logger::Logger::log(shared::logger::LogLevel::Info, "Application started", None);
-    manage_agent_session_watch_state(tauri::Builder::default())
+    let builder = manage_agent_session_watch_state(tauri::Builder::default());
+
+    #[cfg(debug_assertions)]
+    let builder = if std::env::var_os("TAURI_MCP_ENABLED").is_some() {
+        builder.plugin(tauri_plugin_mcp_bridge::init())
+    } else {
+        builder
+    };
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_indexer_languages,

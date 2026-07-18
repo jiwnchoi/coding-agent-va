@@ -1,5 +1,10 @@
-import { ReactFlow, type ReactFlowInstance, type Viewport } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  getViewportForBounds,
+  ReactFlow,
+  type ReactFlowInstance,
+  type Viewport,
+} from "@xyflow/react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   createNodePopover,
@@ -17,12 +22,14 @@ import {
 import { NodeActionPopover } from "@/features/session-dashboard/components/NodeActionPopover";
 import { buildContextGraphHoverIndex } from "@/features/session-dashboard/context-graph/contextGraphHover";
 import styles from "@/features/session-dashboard/context-graph/ContextGraphView.module.css";
+import { contextGraphBounds } from "@/features/session-dashboard/context-graph/layoutGeometry";
 import { buildNodeDescriptionRequest } from "@/features/session-dashboard/context-graph/nodeDescriptionContext";
 import type {
   ContextGraphEdge,
   ContextGraphNode,
 } from "@/features/session-dashboard/context-graph/types";
 import { useSessionContextGraph } from "@/features/session-dashboard/context-graph/useSessionContextGraph";
+import { useElementSize } from "@/features/session-dashboard/hooks/useElementSize";
 import { useNodeDescription } from "@/features/session-dashboard/hooks/useNodeDescription";
 import type {
   AgentSessionFileActivity,
@@ -33,7 +40,9 @@ import type { DescriptionSettings } from "@/shared/lib/generated/bindings";
 import { cn } from "@/shared/lib/utils";
 
 const PRO_OPTIONS = { hideAttribution: true } as const;
-const FIT_VIEW_OPTIONS = { padding: 0.08 } as const;
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 1.8;
+const VIEWPORT_PADDING = 0.08;
 const VISIBLE_ELEMENTS_THRESHOLD = 200;
 const EMPTY_PINNED_FILE_PATHS: string[] = [];
 const viewportByGraphKey = new Map<string, Viewport>();
@@ -73,12 +82,9 @@ export function SessionContextGraphView({
     ContextGraphEdge
   > | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const shellSize = useElementSize(shellRef);
   const isPanningRef = useRef(false);
   const [nodePopover, setNodePopover] = useState<NodePopoverState | null>(null);
-  const lastFittedGraph = useRef<{
-    key: string;
-    instance: ReactFlowInstance<ContextGraphNode, ContextGraphEdge>;
-  } | null>(null);
   const {
     describe: describeNode,
     description: nodeDescription,
@@ -89,8 +95,37 @@ export function SessionContextGraphView({
   } = useNodeDescription();
   const nodes = contextGraph.nodes;
   const graphKey = selectedSession
-    ? `${selectedSession.id}:${graphScopeKey}:${selectedFilePath}`
+    ? `${selectedSession.id}:${graphScopeKey}:${showReadFiles ? "with-reads" : "without-reads"}`
     : null;
+  const layoutKey = useMemo(
+    () =>
+      graphKey
+        ? `${graphKey}:${nodes
+            .map(
+              (node) =>
+                `${node.id}:${node.position.x}:${node.position.y}:${String(node.style?.width)}:${String(node.style?.height)}`
+            )
+            .join("\0")}`
+        : null,
+    [graphKey, nodes]
+  );
+  const initialViewport = useMemo(() => {
+    if (!graphKey || nodes.length === 0 || shellSize.width === 0 || shellSize.height === 0) {
+      return null;
+    }
+
+    return (
+      viewportByGraphKey.get(graphKey) ??
+      getViewportForBounds(
+        contextGraphBounds(nodes),
+        shellSize.width,
+        shellSize.height,
+        MIN_ZOOM,
+        MAX_ZOOM,
+        VIEWPORT_PADDING
+      )
+    );
+  }, [graphKey, nodes, shellSize.height, shellSize.width]);
   const edges = useMemo(() => {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     return [
@@ -123,24 +158,6 @@ export function SessionContextGraphView({
     },
     [graphKey]
   );
-  useEffect(() => {
-    if (
-      !reactFlowInstance ||
-      nodes.length === 0 ||
-      !graphKey ||
-      (lastFittedGraph.current?.key === graphKey &&
-        lastFittedGraph.current.instance === reactFlowInstance)
-    )
-      return;
-    const savedViewport = viewportByGraphKey.get(graphKey);
-    const frame = requestAnimationFrame(() => {
-      if (savedViewport) void reactFlowInstance.setViewport(savedViewport, { duration: 0 });
-      else void reactFlowInstance.fitView({ ...FIT_VIEW_OPTIONS, duration: 0 });
-      lastFittedGraph.current = { key: graphKey, instance: reactFlowInstance };
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [graphKey, nodes.length, reactFlowInstance]);
-
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: ContextGraphNode) => {
       if (node.data.kind !== "file" || !selectedSession || !shellRef.current) return;
@@ -183,7 +200,8 @@ export function SessionContextGraphView({
     setNodePopover(null);
     resetNodeDescription();
   }, [releaseHover, resetNodeDescription]);
-  const isGraphLoading = isFileActivityLoading || isLoading;
+  const isAwaitingViewport = nodes.length > 0 && initialViewport === null;
+  const isGraphLoading = isFileActivityLoading || isLoading || isAwaitingViewport;
 
   return (
     <section className="h-full min-h-0 w-full">
@@ -194,9 +212,11 @@ export function SessionContextGraphView({
           isLargeGraph && styles.largeGraph,
           "relative h-full min-h-0 w-full overflow-hidden bg-transparent"
         )}>
-        {selectedSession?.cwd ? (
+        {selectedSession?.cwd && (!isAwaitingViewport || nodes.length === 0) ? (
           <ReactFlow
+            key={layoutKey}
             className="h-full w-full"
+            defaultViewport={initialViewport ?? undefined}
             nodes={nodes}
             edges={edges}
             edgeTypes={edgeTypes}
@@ -205,8 +225,8 @@ export function SessionContextGraphView({
             nodesConnectable={false}
             elementsSelectable={false}
             edgesFocusable={false}
-            minZoom={0.2}
-            maxZoom={1.8}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             zoomOnDoubleClick={false}
             onlyRenderVisibleElements={isLargeGraph}
             proOptions={PRO_OPTIONS}
@@ -220,12 +240,12 @@ export function SessionContextGraphView({
             onNodeMouseEnter={handleNodeMouseEnter}
             onNodeMouseLeave={handleNodeMouseLeave}
           />
-        ) : (
+        ) : !selectedSession?.cwd ? (
           <GraphEmptyState
             title="No workspace path"
             description="This session does not expose a workspace yet, so the file tree cannot be indexed."
           />
-        )}
+        ) : null}
         {isGraphLoading ? (
           <div
             className={cn(

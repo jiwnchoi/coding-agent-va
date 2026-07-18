@@ -1,6 +1,20 @@
 import { EDGE_COLLISION_PADDING, NODE_HEIGHT, NODE_WIDTH } from "./layoutConstants";
+import type { ContextGraphNode } from "./types";
 
 export type LayoutPoint = { x: number; y: number };
+
+export function contextGraphBounds(nodes: ContextGraphNode[]) {
+  const minX = Math.min(...nodes.map((node) => node.position.x));
+  const minY = Math.min(...nodes.map((node) => node.position.y));
+  const maxX = Math.max(
+    ...nodes.map((node) => node.position.x + numericDimension(node.style?.width, NODE_WIDTH))
+  );
+  const maxY = Math.max(
+    ...nodes.map((node) => node.position.y + numericDimension(node.style?.height, NODE_HEIGHT))
+  );
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
 
 export function nodeCenter(position: LayoutPoint) {
   return { x: position.x + NODE_WIDTH / 2, y: position.y + NODE_HEIGHT / 2 };
@@ -58,4 +72,9 @@ function orientation(firstPoint: LayoutPoint, secondPoint: LayoutPoint, thirdPoi
     (secondPoint.y - firstPoint.y) * (thirdPoint.x - secondPoint.x) -
     (secondPoint.x - firstPoint.x) * (thirdPoint.y - secondPoint.y)
   );
+}
+
+function numericDimension(value: string | number | undefined, fallback: number) {
+  const dimension = typeof value === "number" ? value : Number.parseFloat(value ?? "");
+  return Number.isFinite(dimension) ? dimension : fallback;
 }

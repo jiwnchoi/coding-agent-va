@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { Resizable } from "react-resizable";
 
+import {
+  MAX_PROMPT_PANEL_WIDTH,
+  MIN_PROMPT_PANEL_WIDTH,
+} from "@/features/session-dashboard/constants";
+import { useDashboardLayout } from "@/features/session-dashboard/hooks/useDashboardLayout";
 import { useSessionDetails } from "@/features/session-dashboard/hooks/useSessionDetails";
 import { useViewportWidth } from "@/features/session-dashboard/hooks/useViewportWidth";
 import type {
   AgentSessionSummary,
   SelectedActivityFile,
 } from "@/features/session-dashboard/lib/session-watch";
+import { HorizontalResizeHandle } from "@/shared/components/HorizontalResizeHandle";
 import type { DescriptionSettings } from "@/shared/lib/generated/bindings";
 import { cn } from "@/shared/lib/utils";
 
@@ -14,9 +19,6 @@ import styles from "./SessionContextGraphTab.module.css";
 import { SessionContextGraphView } from "./SessionContextGraphView";
 import { SessionPromptPanel, type SessionScopeSelection } from "./SessionPromptPanel";
 
-const DEFAULT_PROMPT_PANEL_WIDTH = 360;
-const MIN_PROMPT_PANEL_WIDTH = 280;
-const MAX_PROMPT_PANEL_WIDTH = 620;
 const MIN_GRAPH_WIDTH = 420;
 const EMPTY_FILE_ACTIVITY = {
   readFiles: [],
@@ -43,21 +45,23 @@ export function SessionContextGraphTab({
   onScopeChange: () => void;
   onSelectFile: (selection: SelectedActivityFile) => void;
 }) {
-  const [promptPanelWidth, setPromptPanelWidth] = useState(DEFAULT_PROMPT_PANEL_WIDTH);
+  const promptPanelWidth = useDashboardLayout((state) => state.promptPanelWidth);
+  const setPromptPanelWidth = useDashboardLayout((state) => state.setPromptPanelWidth);
   const [scopeSelection, setScopeSelection] = useState<SessionScopeSelection | null>(null);
   const viewportWidth = useViewportWidth();
   const detailsQuery = useSessionDetails(selectedSession);
   const turns = detailsQuery.data?.turns ?? [];
-  const latestTurn = turns[turns.length - 1];
   const resolvedSelection =
-    scopeSelection && detailsQuery.data?.turns.some((turn) => turn.id === scopeSelection.turnId)
+    scopeSelection &&
+    turns.some(
+      (turn) =>
+        turn.id === scopeSelection.turnId &&
+        (scopeSelection.taskId === null ||
+          turn.tasks.some((task) => task.id === scopeSelection.taskId))
+    )
       ? scopeSelection
-      : latestTurn
-        ? { turnId: latestTurn.id, taskId: null }
-        : null;
-  const selectedTurn = detailsQuery.data?.turns.find(
-    (turn) => turn.id === resolvedSelection?.turnId
-  );
+      : null;
+  const selectedTurn = turns.find((turn) => turn.id === resolvedSelection?.turnId);
   const selectedTask = selectedTurn?.tasks.find((task) => task.id === resolvedSelection?.taskId);
   const scopedActivity =
     selectedTask?.fileActivity ??
@@ -69,42 +73,32 @@ export function SessionContextGraphTab({
     Math.min(MAX_PROMPT_PANEL_WIDTH, viewportWidth - MIN_GRAPH_WIDTH)
   );
   const resolvedPanelWidth = Math.min(promptPanelWidth, maxPanelWidth);
-  const scopeLabel =
-    selectedTask?.subject ?? (selectedTurn ? "Prompt activity" : "Session activity");
-
   return (
     <div className="absolute inset-0 flex min-h-0">
-      <Resizable
-        axis="x"
-        width={resolvedPanelWidth}
-        height={0}
-        minConstraints={[MIN_PROMPT_PANEL_WIDTH, 0]}
-        maxConstraints={[maxPanelWidth, 0]}
-        resizeHandles={["e"]}
-        onResize={(_event, data) => setPromptPanelWidth(data.size.width)}>
-        <div
-          className={cn(styles.promptPanel, "relative h-full min-h-0 flex-none")}
-          style={{ width: resolvedPanelWidth }}>
-          <SessionPromptPanel
-            details={detailsQuery.data}
-            isLoading={detailsQuery.isPending}
-            selectedScope={resolvedSelection}
-            sessionTitle={selectedSession.title}
-            onSelectScope={(selection) => {
-              setScopeSelection(selection);
-              onScopeChange();
-            }}
-          />
-        </div>
-      </Resizable>
+      <div
+        className={cn(styles.promptPanel, "relative h-full min-h-0 flex-none")}
+        style={{ width: resolvedPanelWidth }}>
+        <SessionPromptPanel
+          details={detailsQuery.data}
+          isLoading={detailsQuery.isPending}
+          selectedScope={resolvedSelection}
+          sessionTitle={selectedSession.title}
+          workspacePath={selectedSession.cwd}
+          onSelectScope={(selection) => {
+            setScopeSelection(selection);
+            onScopeChange();
+          }}
+          onSelectFile={onSelectFile}
+        />
+        <HorizontalResizeHandle
+          edge="end"
+          maxWidth={maxPanelWidth}
+          minWidth={MIN_PROMPT_PANEL_WIDTH}
+          width={resolvedPanelWidth}
+          onResize={setPromptPanelWidth}
+        />
+      </div>
       <div className="relative min-w-0 flex-1">
-        <div
-          className={cn(
-            styles.graphTitle,
-            "border-border text-card-foreground absolute top-4 left-4 z-[6] max-w-[calc(100%-2rem)] truncate rounded-lg border px-3 py-2.5 text-sm leading-5 font-medium"
-          )}>
-          {scopeLabel}
-        </div>
         <SessionContextGraphView
           descriptionSettings={descriptionSettings}
           fileActivity={scopedActivity}

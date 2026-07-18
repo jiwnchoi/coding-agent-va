@@ -74,6 +74,9 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --activity-edited: #2ca02c;
+  --activity-read-impacted: #ff7f0e;
+  --activity-unread-impacted: #d62728;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);

@@ -24,7 +24,16 @@ export function useAgentSessionWatches(
 ) {
   const [watchRegistrations, setWatchRegistrations] = useState<SessionWatchRegistration[]>([]);
   const activeWatchIdsRef = useRef<string[]>([]);
+  const runtimeSourcesRef = useRef(runtimeSources);
   const watchTransitionRef = useRef(Promise.resolve());
+  runtimeSourcesRef.current = runtimeSources;
+  const runtimeSourceKey = runtimeSources
+    .map(
+      (source) =>
+        `${source.provider}:${source.runtimeHome}:${source.available ? "available" : "unavailable"}`
+    )
+    .sort()
+    .join("\0");
   const hydratedWorkspaceKey = [
     ...new Set(
       hydratedSessions.flatMap((session) =>
@@ -36,7 +45,7 @@ export function useAgentSessionWatches(
     .join("\0");
 
   useEffect(() => {
-    const availableSources = runtimeSources.filter((source) => source.available);
+    const availableSources = runtimeSourcesRef.current.filter((source) => source.available);
     let disposed = false;
 
     async function replaceWatches() {
@@ -99,7 +108,7 @@ export function useAgentSessionWatches(
       };
       watchTransitionRef.current = watchTransitionRef.current.then(stopWatches, stopWatches);
     };
-  }, [hydratedWorkspaceKey, runtimeSources]);
+  }, [hydratedWorkspaceKey, runtimeSourceKey]);
 
   return runtimeSources.some((source) => source.available)
     ? watchRegistrations

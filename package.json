@@ -24,7 +24,6 @@
     "radix-ui": "^1.6.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-resizable": "^4.0.2",
     "shadcn": "^4.12.0",
     "shiki": "^4.3.0",
     "tailwind-merge": "^3.6.0",
@@ -34,6 +33,8 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@hypothesi/tauri-mcp-cli": "0.12.0",
+    "@hypothesi/tauri-mcp-server": "0.12.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.0.1",
     "@types/react": "^19.1.8",

@@ -1,9 +1,12 @@
-import { Check, Circle, ListTodo, LoaderCircle, MessageSquareText } from "lucide-react";
+import { Check, Circle, Files, ListTodo, LoaderCircle, MessageSquareText } from "lucide-react";
 import { useState } from "react";
 
+import type { SelectedActivityFile } from "@/features/session-dashboard/lib/session-watch";
 import type { AgentSessionDetails, AgentSessionTaskStatus } from "@/shared/lib/generated/bindings";
 import { cn } from "@/shared/lib/utils";
 
+import { FileActivityMetrics } from "./FileActivityMetrics";
+import { SessionMarkdownMessage } from "./SessionMarkdownMessage";
 import styles from "./SessionPromptPanel.module.css";
 
 export type SessionScopeSelection = { turnId: string; taskId: string | null };
@@ -28,17 +31,24 @@ export function SessionPromptPanel({
   isLoading,
   selectedScope,
   sessionTitle,
+  workspacePath,
   onSelectScope,
+  onSelectFile,
 }: {
   details: AgentSessionDetails | undefined;
   isLoading: boolean;
   selectedScope: SessionScopeSelection | null;
   sessionTitle: string;
-  onSelectScope: (selection: SessionScopeSelection) => void;
+  workspacePath: string | null;
+  onSelectScope: (selection: SessionScopeSelection | null) => void;
+  onSelectFile: (selection: SelectedActivityFile) => void;
 }) {
   const [trackingMode, setTrackingMode] = useState<TrackingMode>("prompts");
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(() => new Set());
   const turns = details?.turns ?? [];
+  const promptTurns = turns.filter(
+    (turn) => turn.fileActivity.editedFiles.length > 0 || turn.fileActivity.deletedFiles.length > 0
+  );
   const taskEntries = turns.flatMap((turn) =>
     turn.tasks.map((task) => ({ prompts: turn.prompts, task, turnId: turn.id }))
   );
@@ -54,15 +64,7 @@ export function SessionPromptPanel({
 
   function selectTrackingMode(mode: TrackingMode) {
     setTrackingMode(mode);
-    if (mode === "prompts") {
-      const latestTurn = turns[turns.length - 1];
-      if (latestTurn) onSelectScope({ turnId: latestTurn.id, taskId: null });
-      return;
-    }
-    const latestTask = taskEntries[taskEntries.length - 1];
-    if (latestTask) {
-      onSelectScope({ turnId: latestTask.turnId, taskId: latestTask.task.id });
-    }
+    onSelectScope(null);
   }
 
   return (
@@ -70,6 +72,18 @@ export function SessionPromptPanel({
       <div className="border-border border-b px-4 py-3">
         <p className="truncate text-sm font-medium">{sessionTitle}</p>
         <p className="text-muted-foreground mt-0.5 text-xs">Session activity</p>
+      </div>
+      <div className="border-border border-b p-2">
+        <button
+          type="button"
+          aria-pressed={selectedScope === null}
+          className={cn(
+            "hover:bg-accent flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+            selectedScope === null && "bg-accent font-medium"
+          )}
+          onClick={() => onSelectScope(null)}>
+          <Files className="size-3.5" /> All changes
+        </button>
       </div>
       <div className="border-border grid grid-cols-2 border-b p-2" role="tablist">
         <button
@@ -100,19 +114,20 @@ export function SessionPromptPanel({
           <p className="text-muted-foreground px-2 py-4 text-sm">Loading activity…</p>
         ) : trackingMode === "prompts" ? (
           <PromptTrackingList
-            turns={turns}
+            turns={promptTurns}
             expandedMessages={expandedMessages}
             selectedScope={selectedScope}
+            workspacePath={workspacePath}
             onSelectScope={onSelectScope}
+            onSelectFile={onSelectFile}
             onToggleMessage={toggleMessage}
           />
         ) : (
           <TaskTrackingList
             entries={taskEntries}
-            expandedMessages={expandedMessages}
             selectedScope={selectedScope}
+            workspacePath={workspacePath}
             onSelectScope={onSelectScope}
-            onToggleMessage={toggleMessage}
           />
         )}
       </div>
@@ -124,13 +139,17 @@ function PromptTrackingList({
   turns,
   expandedMessages,
   selectedScope,
+  workspacePath,
   onSelectScope,
+  onSelectFile,
   onToggleMessage,
 }: {
   turns: AgentSessionDetails["turns"];
   expandedMessages: Set<string>;
   selectedScope: SessionScopeSelection | null;
-  onSelectScope: (selection: SessionScopeSelection) => void;
+  workspacePath: string | null;
+  onSelectScope: (selection: SessionScopeSelection | null) => void;
+  onSelectFile: (selection: SelectedActivityFile) => void;
   onToggleMessage: (messageId: string) => void;
 }) {
   if (turns.length === 0) {
@@ -149,42 +168,51 @@ function PromptTrackingList({
               const promptMessageId = `${turn.id}:prompt:${promptIndex}`;
               const isPromptExpanded = expandedMessages.has(promptMessageId);
               return (
-                <button
+                <SessionMarkdownMessage
                   key={promptMessageId}
-                  type="button"
+                  source={prompt}
+                  isExpanded={isPromptExpanded}
+                  isPressed={isSelected}
                   className={cn(
-                    "hover:bg-accent w-full px-3 py-3 text-left transition-colors",
                     promptIndex > 0 && "border-border border-t",
                     isSelected && "bg-accent"
                   )}
-                  aria-pressed={isSelected}
-                  aria-expanded={isPromptExpanded}
-                  onClick={() => {
-                    onSelectScope({ turnId: turn.id, taskId: null });
+                  header={
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
+                        <MessageSquareText className="size-3.5" /> User prompt
+                      </span>
+                      <FileActivityMetrics
+                        fileActivity={turn.fileActivity}
+                        workspacePath={workspacePath}
+                      />
+                    </span>
+                  }
+                  onToggle={() => {
+                    onSelectScope(isSelected ? null : { turnId: turn.id, taskId: null });
                     onToggleMessage(promptMessageId);
-                  }}>
-                  <span className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium">
-                    <MessageSquareText className="size-3.5" /> User prompt
-                  </span>
-                  <span className="block text-sm whitespace-pre-wrap">
-                    {isPromptExpanded ? prompt : messagePreview(prompt)}
-                  </span>
-                </button>
+                  }}
+                  onOpenFile={onSelectFile}
+                  fileActivity={turn.fileActivity}
+                  workspacePath={workspacePath}
+                />
               );
             })}
             {turn.summary ? (
-              <button
-                type="button"
-                className="border-border hover:bg-accent w-full border-t px-3 py-3 text-left transition-colors"
-                aria-expanded={isSummaryExpanded}
-                onClick={() => onToggleMessage(summaryMessageId)}>
-                <span className="text-muted-foreground mb-1 block text-xs font-medium">
-                  End summary
-                </span>
-                <span className="block text-sm whitespace-pre-wrap">
-                  {isSummaryExpanded ? turn.summary : messagePreview(turn.summary)}
-                </span>
-              </button>
+              <SessionMarkdownMessage
+                source={turn.summary}
+                isExpanded={isSummaryExpanded}
+                className="border-border border-t"
+                header={
+                  <span className="text-muted-foreground block text-xs font-medium">
+                    End summary
+                  </span>
+                }
+                onToggle={() => onToggleMessage(summaryMessageId)}
+                onOpenFile={onSelectFile}
+                fileActivity={turn.fileActivity}
+                workspacePath={workspacePath}
+              />
             ) : null}
           </li>
         );
@@ -195,20 +223,18 @@ function PromptTrackingList({
 
 function TaskTrackingList({
   entries,
-  expandedMessages,
   selectedScope,
+  workspacePath,
   onSelectScope,
-  onToggleMessage,
 }: {
   entries: Array<{
     prompts: string[];
     task: AgentSessionDetails["turns"][number]["tasks"][number];
     turnId: string;
   }>;
-  expandedMessages: Set<string>;
   selectedScope: SessionScopeSelection | null;
-  onSelectScope: (selection: SessionScopeSelection) => void;
-  onToggleMessage: (messageId: string) => void;
+  workspacePath: string | null;
+  onSelectScope: (selection: SessionScopeSelection | null) => void;
 }) {
   if (entries.length === 0) {
     return <p className="text-muted-foreground px-2 py-4 text-sm">No task activity found.</p>;
@@ -219,8 +245,6 @@ function TaskTrackingList({
       {entries.map(({ prompts, task, turnId }) => {
         const Icon = STATUS_ICON[task.status];
         const isSelected = selectedScope?.taskId === task.id;
-        const summaryMessageId = `${turnId}:${task.id}:summary`;
-        const isSummaryExpanded = expandedMessages.has(summaryMessageId);
         return (
           <li key={task.id} className={cn(styles.turn, "border-border rounded-lg border")}>
             <button
@@ -230,11 +254,7 @@ function TaskTrackingList({
                 isSelected && "bg-accent"
               )}
               aria-pressed={isSelected}
-              aria-expanded={task.summary ? isSummaryExpanded : undefined}
-              onClick={() => {
-                onSelectScope({ turnId, taskId: task.id });
-                if (task.summary) onToggleMessage(summaryMessageId);
-              }}>
+              onClick={() => onSelectScope(isSelected ? null : { turnId, taskId: task.id })}>
               <span className="flex items-start gap-2 text-sm">
                 <Icon
                   className={cn(
@@ -242,16 +262,17 @@ function TaskTrackingList({
                     task.status === "in_progress" && "animate-spin"
                   )}
                 />
-                <span className="min-w-0">
-                  <span className="block font-medium">{task.subject}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 font-medium">{task.subject}</span>
+                    <FileActivityMetrics
+                      fileActivity={task.fileActivity}
+                      workspacePath={workspacePath}
+                    />
+                  </span>
                   <span className="text-muted-foreground mt-1 block truncate text-xs">
                     {messagePreview(prompts[0] ?? "")}
                   </span>
-                  {task.summary ? (
-                    <span className="text-muted-foreground mt-2 block text-xs whitespace-pre-wrap">
-                      {isSummaryExpanded ? task.summary : messagePreview(task.summary)}
-                    </span>
-                  ) : null}
                 </span>
               </span>
             </button>

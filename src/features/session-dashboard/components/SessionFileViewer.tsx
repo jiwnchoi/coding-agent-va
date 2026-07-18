@@ -1,17 +1,17 @@
-import { useEffect, useState } from "react";
-import { Resizable } from "react-resizable";
+import { useEffect } from "react";
 
 import { FileDiffViewer } from "@/features/session-dashboard/components/FileDiffViewer";
 import {
-  DEFAULT_DIFF_PANEL_WIDTH,
   MIN_DIFF_PANEL_WIDTH,
   WIDE_LAYOUT_MEDIA_QUERY,
 } from "@/features/session-dashboard/constants";
+import { useDashboardLayout } from "@/features/session-dashboard/hooks/useDashboardLayout";
 import { useMediaQuery } from "@/features/session-dashboard/hooks/useMediaQuery";
 import type { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import { useViewportWidth } from "@/features/session-dashboard/hooks/useViewportWidth";
 import { clampNumber, getMaxDiffPanelWidth } from "@/features/session-dashboard/layout";
 import type { SelectedActivityFile } from "@/features/session-dashboard/lib/session-watch";
+import { HorizontalResizeHandle } from "@/shared/components/HorizontalResizeHandle";
 import type { useEditorTheme } from "@/shared/hooks/useEditorTheme";
 import { cn } from "@/shared/lib/utils";
 
@@ -32,7 +32,8 @@ export function SessionFileViewer({
   selectedFileDiff: ReturnType<typeof useSessionFileDiff>["selectedFileDiff"];
   theme: ReturnType<typeof useEditorTheme>;
 }) {
-  const [diffPanelWidth, setDiffPanelWidth] = useState(DEFAULT_DIFF_PANEL_WIDTH);
+  const diffPanelWidth = useDashboardLayout((state) => state.diffPanelWidth);
+  const setDiffPanelWidth = useDashboardLayout((state) => state.setDiffPanelWidth);
   const viewportWidth = useViewportWidth();
   const isWideLayout = useMediaQuery(WIDE_LAYOUT_MEDIA_QUERY);
   const isDiffViewerOpen = selectedActivityFile !== null;
@@ -57,12 +58,6 @@ export function SessionFileViewer({
       }
     />
   ) : null;
-
-  useEffect(() => {
-    setDiffPanelWidth((currentWidth) =>
-      clampNumber(currentWidth, MIN_DIFF_PANEL_WIDTH, maxDiffPanelWidth)
-    );
-  }, [maxDiffPanelWidth]);
 
   useEffect(() => {
     if (!isDiffViewerOpen) {
@@ -106,21 +101,17 @@ export function SessionFileViewer({
   }
 
   return (
-    <Resizable
-      axis="x"
-      width={resolvedDiffPanelWidth}
-      height={0}
-      minConstraints={[MIN_DIFF_PANEL_WIDTH, 0]}
-      maxConstraints={[maxDiffPanelWidth, 0]}
-      resizeHandles={["w"]}
-      onResize={(_event, data) => {
-        setDiffPanelWidth(clampNumber(data.size.width, MIN_DIFF_PANEL_WIDTH, maxDiffPanelWidth));
-      }}>
-      <div
-        className={cn(styles.diffPanel, "flex min-w-0 flex-none opacity-0")}
-        style={{ width: resolvedDiffPanelWidth }}>
-        {diffViewer}
-      </div>
-    </Resizable>
+    <div
+      className={cn(styles.diffPanel, "relative flex min-w-0 flex-none opacity-0")}
+      style={{ width: resolvedDiffPanelWidth }}>
+      <HorizontalResizeHandle
+        edge="start"
+        maxWidth={maxDiffPanelWidth}
+        minWidth={MIN_DIFF_PANEL_WIDTH}
+        width={resolvedDiffPanelWidth}
+        onResize={setDiffPanelWidth}
+      />
+      {diffViewer}
+    </div>
   );
 }

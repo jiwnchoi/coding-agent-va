@@ -9,6 +9,9 @@ prepare-rust:
 dev-rust:
   ./node_modules/.bin/tauri dev
 
+dev-mcp:
+  TAURI_MCP_ENABLED=1 ./node_modules/.bin/tauri dev
+
 format-rust:
   cargo fmt --all --manifest-path {{rust_manifest}}
 

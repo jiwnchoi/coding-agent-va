@@ -1,22 +1,13 @@
-pub(crate) mod codex;
-mod shell;
-mod tool_calls;
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-
-pub(crate) use tool_calls::{
-    collect_tool_call_entry_activity, read_tool_call_file_activity, ToolSchema,
-};
 
 use crate::indexer::workspace_dependencies::{
     find_session_impacted_file_relations, ImpactedFileRelation as WorkspaceImpactedFileRelation,
     SessionFileEdit,
 };
 
-use super::paths::normalize_written_activity_path;
-use super::types::AgentSessionFileActivity;
-use super::types::AgentSessionImpactedFileRelation;
+use crate::agent_session::paths::normalize_written_activity_path;
+use crate::agent_session::types::{AgentSessionFileActivity, AgentSessionImpactedFileRelation};
 
 #[derive(Clone, Default)]
 pub(crate) struct ActivityAccumulator {
