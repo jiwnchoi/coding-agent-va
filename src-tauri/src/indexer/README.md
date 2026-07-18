@@ -15,7 +15,7 @@
 - `parser_registry.rs`
   - Maps supported languages to `tree-sitter` grammars.
 - `workspace_indexer.rs`
-  - Walks a repository, builds repo/directory/file nodes, and invokes language-aware parsing for supported files.
+  - Walks a repository, excluding generated directories and nested Git worktrees, builds repo/directory/file nodes, and invokes language-aware parsing for supported files.
 - `symbol_extractor.rs`
   - Extracts top-level declarations such as functions, classes, structs, enums, interfaces, and similar symbols.
 - `import_extractor.rs`

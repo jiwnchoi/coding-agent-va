@@ -2,6 +2,7 @@ use super::import_extractor::{extract_code_identifiers, extract_imports};
 use super::language::{detect_language, SupportedLanguage};
 use super::parser_registry::parse_source;
 use super::symbol_extractor::{extract_declarations, extract_symbols};
+use super::workspace_indexer::is_ignored;
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs;
@@ -444,7 +445,7 @@ fn collect_known_files(workspace_root: &Path) -> Result<HashSet<PathBuf>, String
 
     for entry in WalkDir::new(workspace_root)
         .into_iter()
-        .filter_entry(|entry| !is_ignored(entry.path()))
+        .filter_entry(|entry| !is_ignored(entry.path(), workspace_root))
     {
         let entry = entry.map_err(|error| format!("failed to walk workspace: {error}"))?;
         if entry.file_type().is_file() {
@@ -798,13 +799,4 @@ fn relative_workspace_path(path: &Path, workspace_root: &Path) -> Option<String>
     path.strip_prefix(workspace_root)
         .ok()
         .map(|path| path.display().to_string())
-}
-
-fn is_ignored(path: &Path) -> bool {
-    path.components().any(|component| {
-        matches!(
-            component.as_os_str().to_str(),
-            Some(".git" | "node_modules" | "target" | "dist" | "build" | ".next" | ".turbo")
-        )
-    })
 }

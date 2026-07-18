@@ -26,6 +26,32 @@ fn finds_relative_importers_of_changed_file() {
 }
 
 #[test]
+fn excludes_importers_from_nested_git_worktrees() {
+    let workspace_root = create_temp_workspace("nested-worktree");
+    let src_dir = workspace_root.join("src");
+    let nested_worktree = workspace_root.join(".claude/worktrees/feature");
+    fs::create_dir_all(&src_dir).expect("create current source dir");
+    fs::create_dir_all(nested_worktree.join("src")).expect("create nested source dir");
+    fs::write(src_dir.join("dep.ts"), "export const value = 1;\n").expect("write dependency");
+    fs::write(
+        nested_worktree.join(".git"),
+        "gitdir: /repo/.git/worktrees/feature\n",
+    )
+    .expect("write worktree git marker");
+    fs::write(
+        nested_worktree.join("src/app.ts"),
+        "import { value } from '../../../../src/dep';\nconsole.log(value);\n",
+    )
+    .expect("write nested importer");
+
+    let impacted_files =
+        find_impacted_files(&workspace_root, &[src_dir.join("dep.ts")]).expect("index deps");
+
+    assert!(impacted_files.is_empty());
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
+#[test]
 fn limits_impact_to_files_using_the_changed_declaration() {
     let workspace_root = create_temp_workspace("changed-symbol");
     let src_dir = workspace_root.join("src");

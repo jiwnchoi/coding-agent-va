@@ -55,7 +55,7 @@ impl WorkspaceIndexer {
 
         let entries = WalkDir::new(&workspace_path)
             .into_iter()
-            .filter_entry(|entry| !is_ignored(entry.path()))
+            .filter_entry(|entry| !is_ignored(entry.path(), &workspace_path))
             .filter_map(Result::ok)
             .filter(|entry| entry.path() != workspace_path)
             .map(|entry| entry.into_path())
@@ -274,13 +274,28 @@ fn node_metadata(path: &Path, language: Option<SupportedLanguage>) -> BTreeMap<S
     metadata
 }
 
-fn is_ignored(path: &Path) -> bool {
-    path.components().any(|component| {
-        matches!(
-            component.as_os_str().to_str(),
-            Some(".git" | "node_modules" | "target" | "dist" | "build" | ".next" | ".turbo")
-        )
-    })
+const IGNORED_DIRECTORY_NAMES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+];
+
+pub(super) fn is_ignored(path: &Path, workspace_root: &Path) -> bool {
+    if path == workspace_root {
+        return false;
+    }
+
+    let Ok(relative_path) = path.strip_prefix(workspace_root) else {
+        return true;
+    };
+
+    relative_path.components().any(|component| {
+        IGNORED_DIRECTORY_NAMES.contains(&component.as_os_str().to_str().unwrap_or_default())
+    }) || (path.is_dir() && path.join(".git").exists())
 }
 
 #[cfg(test)]
@@ -314,6 +329,42 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.label.as_deref() == Some("./dep")));
+        fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn excludes_nested_git_worktrees() {
+        let temp_dir = env::temp_dir().join(format!(
+            "coding-agent-va-nested-worktree-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("unix timestamp")
+                .as_nanos()
+        ));
+        let current_src = temp_dir.join("src");
+        let nested_worktree = temp_dir.join(".claude/worktrees/feature");
+        fs::create_dir_all(&current_src).expect("create current worktree source");
+        fs::create_dir_all(nested_worktree.join("src")).expect("create nested worktree source");
+        fs::write(
+            current_src.join("current.ts"),
+            "export const current = true;\n",
+        )
+        .expect("write current source");
+        fs::write(
+            nested_worktree.join(".git"),
+            "gitdir: /repo/.git/worktrees/feature\n",
+        )
+        .expect("write worktree git marker");
+        fs::write(
+            nested_worktree.join("src/nested.ts"),
+            "export const nested = true;\n",
+        )
+        .expect("write nested source");
+
+        let graph = WorkspaceIndexer::index(&temp_dir).expect("index workspace");
+        assert!(graph.nodes.iter().any(|node| node.label == "current.ts"));
+        assert!(!graph.nodes.iter().any(|node| node.label == "feature"));
+        assert!(!graph.nodes.iter().any(|node| node.label == "nested.ts"));
         fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
     }
 }
