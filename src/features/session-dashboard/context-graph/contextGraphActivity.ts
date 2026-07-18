@@ -24,8 +24,8 @@ export function buildActivityByPath(
     fileActivity.readFiles,
     "read",
     workspacePath,
-    showReadFiles,
-    (filePath) => impactedFiles.has(normalizeWorkspacePath(filePath, workspacePath))
+    (filePath) =>
+      showReadFiles || impactedFiles.has(normalizeWorkspacePath(filePath, workspacePath))
   );
 
   for (const [filePath, activities] of activityByPath) {
@@ -77,11 +77,10 @@ function addActivity(
   filePaths: string[],
   activity: ActivitySectionKey,
   workspacePath: string,
-  includeFiles = true,
   shouldInclude: (filePath: string) => boolean = () => true
 ) {
   for (const filePath of filePaths) {
-    if (!includeFiles || !shouldInclude(filePath)) {
+    if (!shouldInclude(filePath)) {
       continue;
     }
     const pathKey = normalizeWorkspacePath(filePath, workspacePath);

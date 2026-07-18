@@ -153,3 +153,6 @@ target/
 
 # macOS
 .DS_Store
+
+# Claude Code local state and worktrees
+.claude/
