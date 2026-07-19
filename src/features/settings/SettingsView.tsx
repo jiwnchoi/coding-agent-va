@@ -7,7 +7,6 @@ import {
   Palette,
   Search,
   Sparkles,
-  Waypoints,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -20,19 +19,11 @@ import {
   AppearanceSettings,
   DescriptionSettings,
   EditorSettings,
-  GraphSettings,
   RuntimeSettings,
 } from "./settings-panels";
 import type { AppSettings } from "./useAppSettings";
 
-type SettingGroup =
-  | "appearance"
-  | "descriptions"
-  | "editor"
-  | "graph"
-  | "keyboard"
-  | "logs"
-  | "runtimes";
+type SettingGroup = "appearance" | "descriptions" | "editor" | "keyboard" | "logs" | "runtimes";
 
 const groups: {
   id: SettingGroup;
@@ -43,7 +34,6 @@ const groups: {
   { id: "appearance", label: "Appearance", section: "Personal", icon: Palette },
   { id: "editor", label: "Editor", section: "Personal", icon: Monitor },
   { id: "keyboard", label: "Keyboard shortcuts", section: "Personal", icon: Keyboard },
-  { id: "graph", label: "Session graph", section: "Coding", icon: Waypoints },
   { id: "descriptions", label: "Descriptions", section: "Coding", icon: Sparkles },
   { id: "runtimes", label: "Agent runtimes", section: "Coding", icon: FolderCog },
 ];
@@ -154,9 +144,6 @@ export function SettingsView({
             ) : null}
             {group === "editor" ? (
               <EditorSettings settings={settings} onChange={onSettingsChange} />
-            ) : null}
-            {group === "graph" ? (
-              <GraphSettings settings={settings} onChange={onSettingsChange} />
             ) : null}
             {group === "descriptions" ? (
               <DescriptionSettings settings={settings} onChange={onSettingsChange} />

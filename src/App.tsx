@@ -278,6 +278,7 @@ function App() {
                     selectedSession={selectedSession}
                     onScopeChange={handleCloseFileViewer}
                     onSelectFile={setSelectedActivityFile}
+                    onShowReadFilesChange={(showReadFiles) => updateSettings({ showReadFiles })}
                   />
                 ) : null}
               </div>

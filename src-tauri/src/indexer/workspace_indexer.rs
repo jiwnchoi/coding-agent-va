@@ -1,41 +1,29 @@
 use super::graph::{ArchitectureEdge, ArchitectureGraph, ArchitectureNode, EdgeKind, NodeKind};
-use super::import_extractor::{extract_imports, ExtractedImport};
 use super::language::{detect_language, SupportedLanguage};
-use super::parser_registry::parse_source;
-use super::symbol_extractor::{extract_symbols, ExtractedSymbol};
-use rayon::prelude::*;
+#[cfg(test)]
+use super::workspace_index::WorkspaceIndexState;
+use super::workspace_index::{IndexedSource, WorkspaceIndex};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use std::path::Path;
 
 pub struct WorkspaceIndexer;
 
 impl WorkspaceIndexer {
+    #[cfg(test)]
     pub fn index(workspace_path: &Path) -> Result<ArchitectureGraph, String> {
-        if !workspace_path.exists() {
-            return Err(format!(
-                "workspace path does not exist: {}",
-                workspace_path.display()
-            ));
-        }
+        let state = WorkspaceIndexState::default();
+        let index = state.snapshot(workspace_path)?;
+        Ok(Self::index_cached(&index))
+    }
 
-        if !workspace_path.is_dir() {
-            return Err(format!(
-                "workspace path is not a directory: {}",
-                workspace_path.display()
-            ));
-        }
-
-        let workspace_path = workspace_path
-            .canonicalize()
-            .map_err(|error| format!("failed to canonicalize workspace path: {error}"))?;
+    pub(crate) fn index_cached(index: &WorkspaceIndex) -> ArchitectureGraph {
+        let workspace_path = &index.root;
 
         let mut graph = ArchitectureGraph::default();
         let mut seen_nodes = HashSet::new();
         let mut seen_edges = HashSet::new();
         let mut external_nodes = HashMap::<String, String>::new();
-        let workspace_id = node_id(&workspace_path);
+        let workspace_id = node_id(workspace_path);
 
         push_node(
             &mut graph,
@@ -53,22 +41,9 @@ impl WorkspaceIndexer {
             },
         );
 
-        let entries = WalkDir::new(&workspace_path)
-            .into_iter()
-            .filter_entry(|entry| !is_ignored(entry.path(), &workspace_path))
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path() != workspace_path)
-            .map(|entry| entry.into_path())
-            .collect::<Vec<_>>();
-        let indexed_files = entries
-            .par_iter()
-            .filter(|path| path.is_file())
-            .filter_map(|path| index_file(path))
-            .collect::<HashMap<_, _>>();
-
-        for path in entries {
+        for path in &index.entries {
             let path = path.as_path();
-            if path == workspace_path {
+            if path == index.root {
                 continue;
             }
 
@@ -111,7 +86,7 @@ impl WorkspaceIndexer {
                 );
             }
 
-            if let Some(indexed_file) = indexed_files.get(path) {
+            if let Some(indexed_file) = index.files.get(path) {
                 merge_indexed_file(
                     &mut graph,
                     &mut seen_nodes,
@@ -119,35 +94,13 @@ impl WorkspaceIndexer {
                     &mut external_nodes,
                     path,
                     &node_id_value,
-                    indexed_file,
+                    indexed_file.as_ref(),
                 );
             }
         }
 
-        Ok(graph)
+        graph
     }
-}
-
-struct IndexedFile {
-    language: SupportedLanguage,
-    symbols: Vec<ExtractedSymbol>,
-    imports: Vec<ExtractedImport>,
-}
-
-fn index_file(path: &Path) -> Option<(PathBuf, IndexedFile)> {
-    let language = detect_language(path)?;
-    let source = fs::read_to_string(path).ok()?;
-    let tree = parse_source(language, &source).ok()?;
-    let root = tree.root_node();
-
-    Some((
-        path.to_path_buf(),
-        IndexedFile {
-            language,
-            symbols: extract_symbols(language, &source, root),
-            imports: extract_imports(language, &source, root),
-        },
-    ))
 }
 
 fn merge_indexed_file(
@@ -157,7 +110,7 @@ fn merge_indexed_file(
     external_nodes: &mut HashMap<String, String>,
     path: &Path,
     file_node_id: &str,
-    indexed_file: &IndexedFile,
+    indexed_file: &IndexedSource,
 ) {
     for symbol in &indexed_file.symbols {
         let symbol_node_id = format!("{file_node_id}#symbol:{}", symbol.name);

@@ -9,6 +9,7 @@ import type {
   SessionWatchEventPayload,
   SessionWatchRegistration,
 } from "@/features/session-dashboard/lib/session-watch";
+import { queryKeys } from "@/shared/lib/agent-api";
 import { logger } from "@/shared/lib/logger";
 
 const WATCH_REFRESH_DEBOUNCE_MS = 750;
@@ -170,9 +171,23 @@ export function useAgentSessionWatchRefresh(
         if (!disposed && shouldRefreshSessionDetails) {
           const selectedSessionId = selectedSessionIdRef.current;
           if (selectedSessionId) {
-            await queryClient.invalidateQueries({
-              queryKey: ["session-details", selectedSessionId],
-            });
+            const selectedSession = sessionsRef.current.find(
+              (session) => session.id === selectedSessionId
+            );
+            await Promise.all([
+              queryClient.refetchQueries({
+                queryKey: queryKeys.sessionDetails(selectedSessionId),
+                type: "active",
+              }),
+              ...(selectedSession?.cwd
+                ? [
+                    queryClient.refetchQueries({
+                      queryKey: queryKeys.workspaceGraph(selectedSession.cwd),
+                      type: "active",
+                    }),
+                  ]
+                : []),
+            ]);
           }
         }
       } finally {
@@ -262,12 +277,16 @@ function selectedSessionInputChanged(
   if (changedPaths.has(normalizeWatchPath(selectedSession.transcriptPath))) {
     return true;
   }
-  if (provider !== "claude") {
-    return false;
+
+  const runtimeHome = normalizeWatchPath(selectedSession.runtimeHome);
+  if (provider === "claude") {
+    const taskDirectory = normalizeWatchPath(
+      `${runtimeHome}/tasks/${selectedSession.providerSessionId}`
+    );
+    return [...changedPaths].some(
+      (path) => path.startsWith(`${taskDirectory}/`) || path.startsWith(`${runtimeHome}/projects/`)
+    );
   }
 
-  const taskDirectory = normalizeWatchPath(
-    `${selectedSession.runtimeHome}/tasks/${selectedSession.providerSessionId}`
-  );
-  return [...changedPaths].some((path) => path.startsWith(`${taskDirectory}/`));
+  return [...changedPaths].some((path) => path.startsWith(`${runtimeHome}/sessions/`));
 }

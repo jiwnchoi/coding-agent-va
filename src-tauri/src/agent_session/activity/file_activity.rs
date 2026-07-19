@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use crate::indexer::workspace_dependencies::find_session_impacted_file_relations;
 use crate::indexer::workspace_dependencies::{
-    find_session_impacted_file_relations, ImpactedFileRelation as WorkspaceImpactedFileRelation,
-    SessionFileEdit,
+    find_session_impacted_file_relations_cached,
+    ImpactedFileRelation as WorkspaceImpactedFileRelation, SessionFileEdit,
 };
+use crate::indexer::WorkspaceIndexState;
 
 use crate::agent_session::paths::normalize_written_activity_path;
 use crate::agent_session::types::{AgentSessionFileActivity, AgentSessionImpactedFileRelation};
@@ -82,6 +85,7 @@ pub(crate) fn sort_file_activity(activity: HashMap<String, u64>) -> Vec<String> 
     entries.into_iter().map(|(path, _)| path).collect()
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_impacted_file_relations(
     cwd: Option<&str>,
     edited_files: &HashMap<String, u64>,
@@ -92,23 +96,7 @@ pub(crate) fn resolve_impacted_file_relations(
         return Ok(Vec::new());
     };
 
-    let edits = edited_files
-        .keys()
-        .filter(|path| path_is_in_workspace(path, &workspace_root))
-        .map(|path| SessionFileEdit {
-            path: PathBuf::from(path),
-            fragments: edit_fragments.get(path).cloned().unwrap_or_default(),
-        })
-        .chain(
-            deleted_files
-                .keys()
-                .filter(|path| path_is_in_workspace(path, &workspace_root))
-                .map(|path| SessionFileEdit {
-                    path: PathBuf::from(path),
-                    fragments: Vec::new(),
-                }),
-        )
-        .collect::<Vec<_>>();
+    let edits = session_file_edits(&workspace_root, edited_files, deleted_files, edit_fragments);
     if edits.is_empty() {
         return Ok(Vec::new());
     }
@@ -119,6 +107,54 @@ pub(crate) fn resolve_impacted_file_relations(
             .map(agent_impacted_file_relation_from_workspace)
             .collect()
     })
+}
+
+pub(crate) fn resolve_impacted_file_relations_cached(
+    index_state: &WorkspaceIndexState,
+    cwd: Option<&str>,
+    edited_files: &HashMap<String, u64>,
+    deleted_files: &HashMap<String, u64>,
+    edit_fragments: &HashMap<String, Vec<String>>,
+) -> Result<Vec<AgentSessionImpactedFileRelation>, String> {
+    let Some(workspace_root) = cwd.map(PathBuf::from) else {
+        return Ok(Vec::new());
+    };
+    let edits = session_file_edits(&workspace_root, edited_files, deleted_files, edit_fragments);
+    if edits.is_empty() {
+        return Ok(Vec::new());
+    }
+    let index = index_state.snapshot(&workspace_root)?;
+    find_session_impacted_file_relations_cached(&index, &edits).map(|relations| {
+        relations
+            .into_iter()
+            .map(agent_impacted_file_relation_from_workspace)
+            .collect()
+    })
+}
+
+fn session_file_edits(
+    workspace_root: &Path,
+    edited_files: &HashMap<String, u64>,
+    deleted_files: &HashMap<String, u64>,
+    edit_fragments: &HashMap<String, Vec<String>>,
+) -> Vec<SessionFileEdit> {
+    edited_files
+        .keys()
+        .filter(|path| path_is_in_workspace(path, workspace_root))
+        .map(|path| SessionFileEdit {
+            path: PathBuf::from(path),
+            fragments: edit_fragments.get(path).cloned().unwrap_or_default(),
+        })
+        .chain(
+            deleted_files
+                .keys()
+                .filter(|path| path_is_in_workspace(path, workspace_root))
+                .map(|path| SessionFileEdit {
+                    path: PathBuf::from(path),
+                    fragments: Vec::new(),
+                }),
+        )
+        .collect()
 }
 
 pub(crate) fn remove_edited_files_from_read_files(

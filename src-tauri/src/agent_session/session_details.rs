@@ -4,12 +4,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use crate::indexer::WorkspaceIndexState;
 use serde::Deserialize;
 use tree_sitter::{Node, Parser};
 
 use super::activity::codex::{collect_codex_read_files, collect_codex_written_files};
 use super::activity::{
-    collect_tool_call_entry_activity, finish_file_activity, resolve_impacted_file_relations,
+    collect_tool_call_entry_activity, finish_file_activity, resolve_impacted_file_relations_cached,
     ActivityAccumulator, ToolSchema,
 };
 use super::time::entry_timestamp_ms;
@@ -19,7 +20,26 @@ use super::types::{
     AgentSessionTask, AgentSessionTaskStatus,
 };
 
+#[cfg(test)]
 pub(crate) fn read_session_details(
+    provider: AgentSessionProvider,
+    provider_session_id: &str,
+    transcript_path: &Path,
+    runtime_home: &Path,
+    cwd: Option<&str>,
+) -> Result<AgentSessionDetails, String> {
+    read_session_details_cached(
+        &WorkspaceIndexState::default(),
+        provider,
+        provider_session_id,
+        transcript_path,
+        runtime_home,
+        cwd,
+    )
+}
+
+pub(crate) fn read_session_details_cached(
+    index_state: &WorkspaceIndexState,
     provider: AgentSessionProvider,
     provider_session_id: &str,
     transcript_path: &Path,
@@ -72,7 +92,8 @@ pub(crate) fn read_session_details(
         .cloned()
         .collect::<Vec<_>>();
     let mut file_activity = finish_file_activity(cwd, session_activity.clone());
-    let impacted_relations = resolve_impacted_file_relations(
+    let impacted_relations = resolve_impacted_file_relations_cached(
+        index_state,
         cwd,
         &session_activity.edited_files,
         &session_activity.deleted_files,

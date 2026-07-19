@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use tauri::{ipc::Channel, AppHandle, State};
 use watchexec::Watchexec;
 
+use crate::indexer::WorkspaceIndexState;
 use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
@@ -17,7 +18,7 @@ use super::file_system::resolve_existing_dir;
 use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
 use super::protocols::AgentSessionCandidate;
-use super::session_details::read_session_details;
+use super::session_details::read_session_details_cached;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
@@ -35,14 +36,17 @@ const MAX_SESSION_PAGE_SIZE: usize = 100;
 
 #[tauri::command]
 pub async fn get_agent_session_details(
+    index_state: State<'_, WorkspaceIndexState>,
     provider: AgentSessionProvider,
     provider_session_id: String,
     transcript_path: String,
     runtime_home: String,
     cwd: Option<String>,
 ) -> Result<AgentSessionDetails, String> {
+    let index_state = index_state.inner().clone();
     run_blocking("session details", move || {
-        read_session_details(
+        read_session_details_cached(
+            &index_state,
             provider,
             &provider_session_id,
             &PathBuf::from(transcript_path),

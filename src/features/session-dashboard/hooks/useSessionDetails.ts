@@ -14,5 +14,6 @@ export function useSessionDetails(session: AgentSessionSummary) {
         runtimeHome: session.runtimeHome,
         cwd: session.cwd,
       }),
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }

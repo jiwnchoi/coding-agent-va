@@ -87,6 +87,41 @@ fn limits_impact_to_files_using_the_changed_declaration() {
 }
 
 #[test]
+fn prefers_an_exact_multiline_fragment_over_matching_each_line() {
+    let workspace_root = create_temp_workspace("exact-fragment");
+    let src_dir = workspace_root.join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    fs::write(
+        src_dir.join("dep.ts"),
+        "export function changed() {\n  return 1;\n}\nexport function untouched() {\n  return 1;\n}\n",
+    )
+    .expect("write dependency");
+    fs::write(
+        src_dir.join("changed-user.ts"),
+        "import { changed } from './dep';\nchanged();\n",
+    )
+    .expect("write changed symbol user");
+    fs::write(
+        src_dir.join("untouched-user.ts"),
+        "import { untouched } from './dep';\nuntouched();\n",
+    )
+    .expect("write untouched symbol user");
+
+    let relations = find_session_impacted_file_relations(
+        &workspace_root,
+        &[SessionFileEdit {
+            path: src_dir.join("dep.ts"),
+            fragments: vec!["export function changed() {\n  return 1;\n}".to_string()],
+        }],
+    )
+    .expect("index exact changed declaration");
+
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].impacted_file, "src/changed-user.ts");
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
+#[test]
 fn recognizes_value_access_and_inheritance_as_actual_uses() {
     let workspace_root = create_temp_workspace("usage-kinds");
     let src_dir = workspace_root.join("src");
@@ -168,6 +203,41 @@ fn limits_method_changes_to_files_calling_that_method() {
 
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0].impacted_file, "src/changed-user.ts");
+    fs::remove_dir_all(workspace_root).expect("cleanup workspace");
+}
+
+#[test]
+fn ignores_matching_member_names_unrelated_to_the_imported_declaration() {
+    let workspace_root = create_temp_workspace("unrelated-member");
+    let src_dir = workspace_root.join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    fs::write(
+        src_dir.join("service.ts"),
+        "export class Service {\n  changed() { return 2; }\n}\n",
+    )
+    .expect("write service");
+    fs::write(
+        src_dir.join("actual-user.ts"),
+        "import { Service } from './service';\nnew Service().changed();\n",
+    )
+    .expect("write actual service user");
+    fs::write(
+        src_dir.join("unrelated-user.ts"),
+        "import { Service } from './service';\nconst other = { changed() { return 1; } };\nother.changed();\n",
+    )
+    .expect("write unrelated member user");
+
+    let relations = find_session_impacted_file_relations(
+        &workspace_root,
+        &[SessionFileEdit {
+            path: src_dir.join("service.ts"),
+            fragments: vec!["changed() { return 2; }".to_string()],
+        }],
+    )
+    .expect("index changed method");
+
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].impacted_file, "src/actual-user.ts");
     fs::remove_dir_all(workspace_root).expect("cleanup workspace");
 }
 

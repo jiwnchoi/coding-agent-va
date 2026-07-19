@@ -15,7 +15,11 @@
 - `parser_registry.rs`
   - Maps supported languages to `tree-sitter` grammars.
 - `workspace_indexer.rs`
-  - Walks a repository, excluding generated directories and nested Git worktrees, builds repo/directory/file nodes, and invokes language-aware parsing for supported files.
+  - Builds repo/directory/file nodes and the serialized architecture graph from a shared workspace index.
+- `workspace_index.rs`
+  - Owns the workspace-scoped in-memory index cache used by architecture graph and session impact queries.
+  - Walks repositories while respecting `.gitignore` rules and excluding generated directories and nested Git worktrees.
+  - Reuses unchanged parsed files and incrementally reparses changed files from their previous tree-sitter trees.
 - `symbol_extractor.rs`
   - Extracts top-level declarations such as functions, classes, structs, enums, interfaces, and similar symbols.
 - `import_extractor.rs`
@@ -26,9 +30,19 @@
 ## Concurrency model
 
 - Tauri commands move repository scans and parsing onto Tokio's blocking pool so CPU and filesystem work does not occupy async runtime workers.
+- The Tauri-managed `WorkspaceIndexState` serializes refreshes for the same cache, so simultaneous graph and session-detail requests cannot duplicate a cold workspace parse.
 - Rayon parses supported source files in parallel, with one independent `tree-sitter` parser per file.
-- Per-file results are merged after parallel parsing so graph construction stays lock-free and deterministic.
-- Workspace dependency indexing uses the same parallel file-analysis model before performing its deterministic impact traversal.
+- Cached file fingerprints reuse unchanged parse trees and extracted symbols, imports, and identifiers.
+- Changed files apply a tree-sitter `InputEdit` to the previous tree and use it as the incremental parse input.
+- The cache retains the four most recently used workspaces to bound source and tree memory.
+- Workspace dependency traversal and architecture graph construction share the refreshed snapshot and remain deterministic.
+
+## Cache lifecycle
+
+- The cache is process-local and survives navigation between sessions for the lifetime of the desktop application.
+- Every graph or impact query refreshes the workspace snapshot by comparing file length and modification time.
+- Deleted files are removed, new files are parsed, and only changed supported files are incrementally reparsed.
+- A desktop application restart starts with a cold cache because tree-sitter trees are runtime objects and are not serialized to disk.
 
 ## Supported languages
 
@@ -88,7 +102,7 @@ These commands let the React UI query supported languages and request a fresh gr
 
 ## Next steps
 
-- Add incremental file-level reindexing instead of full workspace walks.
+- Replace metadata refresh scans with a dedicated workspace watcher if repository traversal becomes measurable for exceptionally large workspaces.
 - Improve import extraction for languages with more complex module syntax.
 - Resolve internal imports to in-repo file targets when path resolution is available.
 - Add optional language-specific semantic adapters when visualization needs more precise symbol linkage than `tree-sitter` alone can provide.

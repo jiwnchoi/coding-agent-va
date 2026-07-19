@@ -36,6 +36,7 @@ export function SessionContextGraphTab({
   selectedSession,
   onScopeChange,
   onSelectFile,
+  onShowReadFilesChange,
 }: {
   descriptionSettings: DescriptionSettings;
   showReadFiles: boolean;
@@ -44,6 +45,7 @@ export function SessionContextGraphTab({
   selectedSession: AgentSessionSummary;
   onScopeChange: () => void;
   onSelectFile: (selection: SelectedActivityFile) => void;
+  onShowReadFilesChange: (showReadFiles: boolean) => void;
 }) {
   const promptPanelWidth = useDashboardLayout((state) => state.promptPanelWidth);
   const setPromptPanelWidth = useDashboardLayout((state) => state.setPromptPanelWidth);
@@ -82,6 +84,7 @@ export function SessionContextGraphTab({
           details={detailsQuery.data}
           isLoading={detailsQuery.isPending}
           selectedScope={resolvedSelection}
+          showReadFiles={showReadFiles}
           sessionTitle={selectedSession.title}
           workspacePath={selectedSession.cwd}
           onSelectScope={(selection) => {
@@ -89,6 +92,7 @@ export function SessionContextGraphTab({
             onScopeChange();
           }}
           onSelectFile={onSelectFile}
+          onShowReadFilesChange={onShowReadFilesChange}
         />
         <HorizontalResizeHandle
           edge="end"

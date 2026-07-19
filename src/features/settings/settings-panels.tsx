@@ -72,53 +72,6 @@ export function EditorSettings({
   );
 }
 
-function ToggleControl({
-  checked,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer justify-end">
-      <input
-        aria-label={label}
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="peer sr-only"
-        type="checkbox"
-      />
-      <span className="bg-muted peer-checked:bg-primary relative block h-6 w-10 rounded-full transition-colors after:absolute after:top-1 after:left-1 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
-    </label>
-  );
-}
-
-export function GraphSettings({
-  settings,
-  onChange,
-}: {
-  settings: AppSettings;
-  onChange: (update: Partial<AppSettings>) => void;
-}) {
-  return (
-    <div className="divide-border divide-y">
-      <SettingRow
-        title="Read files"
-        description="Show files that the agent read without editing."
-        control={
-          <ToggleControl
-            label="Show read files"
-            checked={settings.showReadFiles}
-            onChange={(showReadFiles) => onChange({ showReadFiles })}
-          />
-        }
-      />
-    </div>
-  );
-}
-
 export function DescriptionSettings({
   settings,
   onChange,

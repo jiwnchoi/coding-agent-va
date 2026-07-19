@@ -1,5 +1,5 @@
 import { Check, Circle, Files, ListTodo, LoaderCircle, MessageSquareText } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { SelectedActivityFile } from "@/features/session-dashboard/lib/session-watch";
 import type { AgentSessionDetails, AgentSessionTaskStatus } from "@/shared/lib/generated/bindings";
@@ -30,21 +30,26 @@ export function SessionPromptPanel({
   details,
   isLoading,
   selectedScope,
+  showReadFiles,
   sessionTitle,
   workspacePath,
   onSelectScope,
   onSelectFile,
+  onShowReadFilesChange,
 }: {
   details: AgentSessionDetails | undefined;
   isLoading: boolean;
   selectedScope: SessionScopeSelection | null;
+  showReadFiles: boolean;
   sessionTitle: string;
   workspacePath: string | null;
   onSelectScope: (selection: SessionScopeSelection | null) => void;
   onSelectFile: (selection: SelectedActivityFile) => void;
+  onShowReadFilesChange: (showReadFiles: boolean) => void;
 }) {
   const [trackingMode, setTrackingMode] = useState<TrackingMode>("prompts");
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(() => new Set());
+  const activityScrollRef = useRef<HTMLDivElement>(null);
   const turns = details?.turns ?? [];
   const promptTurns = turns.filter(
     (turn) => turn.fileActivity.editedFiles.length > 0 || turn.fileActivity.deletedFiles.length > 0
@@ -52,6 +57,13 @@ export function SessionPromptPanel({
   const taskEntries = turns.flatMap((turn) =>
     turn.tasks.map((task) => ({ prompts: turn.prompts, task, turnId: turn.id }))
   );
+
+  useEffect(() => {
+    const scrollElement = activityScrollRef.current;
+    if (scrollElement) {
+      scrollElement.scrollTop = scrollElement.scrollHeight;
+    }
+  }, [details?.turns, trackingMode]);
 
   function toggleMessage(messageId: string) {
     setExpandedMessages((current) => {
@@ -73,17 +85,29 @@ export function SessionPromptPanel({
         <p className="truncate text-sm font-medium">{sessionTitle}</p>
         <p className="text-muted-foreground mt-0.5 text-xs">Session activity</p>
       </div>
-      <div className="border-border border-b p-2">
+      <div className="border-border flex items-center gap-2 border-b p-2">
         <button
           type="button"
           aria-pressed={selectedScope === null}
           className={cn(
-            "hover:bg-accent flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+            "hover:bg-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
             selectedScope === null && "bg-accent font-medium"
           )}
           onClick={() => onSelectScope(null)}>
-          <Files className="size-3.5" /> All changes
+          <Files className="size-3.5 shrink-0" />
+          <span className="truncate">All changes</span>
         </button>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 px-1 text-xs">
+          <span className="text-muted-foreground">Read files</span>
+          <input
+            type="checkbox"
+            aria-label="Show read files"
+            checked={showReadFiles}
+            onChange={(event) => onShowReadFilesChange(event.target.checked)}
+            className="peer sr-only"
+          />
+          <span className="bg-muted peer-checked:bg-primary relative block h-5 w-9 rounded-full transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
+        </label>
       </div>
       <div className="border-border grid grid-cols-2 border-b p-2" role="tablist">
         <button
@@ -109,7 +133,9 @@ export function SessionPromptPanel({
           <ListTodo className="size-3.5" /> Tasks
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div
+        ref={activityScrollRef}
+        className="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto py-3 pr-0 pl-3">
         {isLoading ? (
           <p className="text-muted-foreground px-2 py-4 text-sm">Loading activity…</p>
         ) : trackingMode === "prompts" ? (
