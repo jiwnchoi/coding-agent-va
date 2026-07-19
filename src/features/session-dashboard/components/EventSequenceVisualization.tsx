@@ -15,6 +15,7 @@ import type {
 import { cn } from "@/shared/lib/utils";
 
 import { isHoveredFile } from "./event-sequence-geometry";
+import { buildEventSequenceFileLayout } from "./event-sequence-layout";
 import { EventSequenceConnections, type EventSequencePoint } from "./EventSequenceConnections";
 import styles from "./EventSequenceVisualization.module.css";
 
@@ -64,7 +65,16 @@ export function EventSequenceVisualization({
     () => rows.map((row) => buildEventGroups(row.activity, workspacePath)),
     [rows, workspacePath]
   );
-  const { fileIndexes, contentWidth } = useMemo(() => buildFileLayout(rowGroups), [rowGroups]);
+  const { columnByFile, columnCount } = useMemo(
+    () =>
+      buildEventSequenceFileLayout(
+        rowGroups.map((groups) =>
+          COLUMNS.flatMap((column) => groups[column.key].map((event) => event.key))
+        )
+      ),
+    [rowGroups]
+  );
+  const contentWidth = SIDE_PADDING * 2 + Math.max(1, columnCount) * FILE_SPACING;
   const chartWidth = Math.max(width, contentWidth, 360);
   const height = HEADER_HEIGHT + Math.max(rows.length, 1) * ROW_HEIGHT;
 
@@ -79,7 +89,7 @@ export function EventSequenceVisualization({
           nextPoints.push({
             ...event,
             column: column.key,
-            x: SIDE_PADDING + (fileIndexes.get(event.key) ?? 0) * FILE_SPACING,
+            x: SIDE_PADDING + (columnByFile.get(event.key) ?? 0) * FILE_SPACING,
             y: HEADER_HEIGHT + ROW_HEIGHT * rowIndex + ROW_HEIGHT / 2,
             rowIndex,
           });
@@ -87,7 +97,7 @@ export function EventSequenceVisualization({
       });
     });
     return nextPoints;
-  }, [fileIndexes, rowGroups, rows]);
+  }, [columnByFile, rowGroups, rows]);
 
   const connections = useMemo(() => {
     const lastPointByFile = new Map<string, EventPoint>();
@@ -254,22 +264,4 @@ function buildEventGroups(fileActivity: AgentSessionFileActivity, workspacePath:
   add("impacted", impacted, "impacted");
   add("read", read, "read");
   return groups;
-}
-
-function buildFileLayout(
-  rowGroups: Array<Record<EventColumn, Array<Omit<EventPoint, "column" | "x" | "y" | "rowIndex">>>>
-) {
-  const fileIndexes = new Map<string, number>();
-  for (const groups of rowGroups) {
-    for (const column of COLUMNS) {
-      for (const event of groups[column.key]) {
-        if (!fileIndexes.has(event.key)) fileIndexes.set(event.key, fileIndexes.size);
-      }
-    }
-  }
-
-  return {
-    fileIndexes,
-    contentWidth: SIDE_PADDING * 2 + Math.max(1, fileIndexes.size) * FILE_SPACING,
-  };
 }
