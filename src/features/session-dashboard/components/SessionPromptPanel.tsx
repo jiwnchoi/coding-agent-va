@@ -43,7 +43,7 @@ export function SessionPromptPanel({
   onShowReadFilesChange: (showReadFiles: boolean) => void;
 }) {
   const [trackingMode, setTrackingMode] = useState<TrackingMode>("prompts");
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(() => new Set());
+  const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
   const activityScrollRef = useRef<HTMLDivElement>(null);
   const turns = details?.turns ?? [];
   const promptTurns = turns.filter(
@@ -61,12 +61,7 @@ export function SessionPromptPanel({
   }, [details?.turns, trackingMode]);
 
   function toggleMessage(messageId: string) {
-    setExpandedMessages((current) => {
-      const next = new Set(current);
-      if (next.has(messageId)) next.delete(messageId);
-      else next.add(messageId);
-      return next;
-    });
+    setExpandedMessageId((current) => (current === messageId ? null : messageId));
   }
 
   function selectTrackingMode(mode: TrackingMode) {
@@ -79,30 +74,6 @@ export function SessionPromptPanel({
       <div className="border-border border-b px-4 py-3">
         <p className="truncate text-sm font-medium">{sessionTitle}</p>
         <p className="text-muted-foreground mt-0.5 text-xs">Session activity</p>
-      </div>
-      <div className="border-border flex items-center gap-2 border-b p-2">
-        <button
-          type="button"
-          aria-pressed={selectedScope === null}
-          className={cn(
-            "hover:bg-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-            selectedScope === null && "bg-accent font-medium"
-          )}
-          onClick={() => onSelectScope(null)}>
-          <Files className="size-3.5 shrink-0" />
-          <span className="truncate">All changes</span>
-        </button>
-        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 px-1 text-xs">
-          <span className="text-muted-foreground">Read files</span>
-          <input
-            type="checkbox"
-            aria-label="Show read files"
-            checked={showReadFiles}
-            onChange={(event) => onShowReadFilesChange(event.target.checked)}
-            className="peer sr-only"
-          />
-          <span className="bg-muted peer-checked:bg-primary relative block h-5 w-9 rounded-full transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
-        </label>
       </div>
       <div className="border-border grid grid-cols-2 border-b p-2" role="tablist">
         <button
@@ -136,7 +107,7 @@ export function SessionPromptPanel({
         ) : trackingMode === "prompts" ? (
           <PromptTrackingList
             turns={promptTurns}
-            expandedMessages={expandedMessages}
+            expandedMessageId={expandedMessageId}
             selectedScope={selectedScope}
             workspacePath={workspacePath}
             onSelectScope={onSelectScope}
@@ -152,13 +123,37 @@ export function SessionPromptPanel({
           />
         )}
       </div>
+      <div className="border-border flex shrink-0 items-center gap-2 border-t p-2">
+        <button
+          type="button"
+          aria-pressed={selectedScope === null}
+          className={cn(
+            "hover:bg-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+            selectedScope === null && "bg-accent font-medium"
+          )}
+          onClick={() => onSelectScope(null)}>
+          <Files className="size-3.5 shrink-0" />
+          <span className="truncate">All changes</span>
+        </button>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 px-1 text-xs">
+          <span className="text-muted-foreground">Read files</span>
+          <input
+            type="checkbox"
+            aria-label="Show read files"
+            checked={showReadFiles}
+            onChange={(event) => onShowReadFilesChange(event.target.checked)}
+            className="peer sr-only"
+          />
+          <span className="bg-muted peer-checked:bg-primary relative block h-5 w-9 rounded-full transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
+        </label>
+      </div>
     </aside>
   );
 }
 
 function PromptTrackingList({
   turns,
-  expandedMessages,
+  expandedMessageId,
   selectedScope,
   workspacePath,
   onSelectScope,
@@ -166,7 +161,7 @@ function PromptTrackingList({
   onToggleMessage,
 }: {
   turns: AgentSessionDetails["turns"];
-  expandedMessages: Set<string>;
+  expandedMessageId: string | null;
   selectedScope: SessionScopeSelection | null;
   workspacePath: string | null;
   onSelectScope: (selection: SessionScopeSelection | null) => void;
@@ -182,12 +177,12 @@ function PromptTrackingList({
       {turns.map((turn) => {
         const isSelected = selectedScope?.turnId === turn.id && selectedScope.taskId === null;
         const summaryMessageId = `${turn.id}:summary`;
-        const isSummaryExpanded = expandedMessages.has(summaryMessageId);
+        const isSummaryExpanded = expandedMessageId === summaryMessageId;
         return (
           <li key={turn.id} className={cn(styles.turn, "border-border rounded-lg border")}>
             {turn.prompts.map((prompt, promptIndex) => {
               const promptMessageId = `${turn.id}:prompt:${promptIndex}`;
-              const isPromptExpanded = expandedMessages.has(promptMessageId);
+              const isPromptExpanded = expandedMessageId === promptMessageId;
               return (
                 <SessionMarkdownMessage
                   key={promptMessageId}
