@@ -13,6 +13,7 @@ import { queryKeys } from "@/shared/lib/agent-api";
 import { logger } from "@/shared/lib/logger";
 
 const WATCH_REFRESH_INTERVAL_MS = 500;
+const WATCH_RECOVERY_INTERVAL_MS = 30_000;
 const EMPTY_WATCH_REGISTRATIONS: SessionWatchRegistration[] = [];
 
 type CurrentRef<T> = {
@@ -21,6 +22,7 @@ type CurrentRef<T> = {
 
 export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
   const [watchRegistrations, setWatchRegistrations] = useState<SessionWatchRegistration[]>([]);
+  const [watchRestartVersion, setWatchRestartVersion] = useState(0);
   const activeWatchIdsRef = useRef<string[]>([]);
   const runtimeSourcesRef = useRef(runtimeSources);
   const watchTransitionRef = useRef(Promise.resolve());
@@ -32,6 +34,25 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
     )
     .sort()
     .join("\0");
+  useEffect(() => {
+    let disposed = false;
+    const unlistenPromise = listen("agent-session-watch-event", (event) => {
+      const payload = event.payload as SessionWatchEventPayload;
+      if (
+        !disposed &&
+        activeWatchIdsRef.current.includes(payload.watchId) &&
+        isWatchError(payload)
+      ) {
+        setWatchRestartVersion((currentVersion) => currentVersion + 1);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   useEffect(() => {
     const availableSources = runtimeSourcesRef.current.filter((source) => source.available);
     let disposed = false;
@@ -96,7 +117,7 @@ export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
       };
       watchTransitionRef.current = watchTransitionRef.current.then(stopWatches, stopWatches);
     };
-  }, [runtimeSourceKey]);
+  }, [runtimeSourceKey, watchRestartVersion]);
 
   return runtimeSources.some((source) => source.available)
     ? watchRegistrations
@@ -117,10 +138,13 @@ export function useAgentSessionWatchRefresh(
     let disposed = false;
     let refreshTimeoutId: number | null = null;
     let settleRefreshTimeoutId: number | null = null;
+    let recoveryIntervalId: number | null = null;
     let refreshInFlight = false;
     let refreshQueued = false;
     let pendingSessionsRefresh = false;
     let pendingSessionDetailsRefresh = false;
+    let pendingWorkspaceGraphRefresh = false;
+    let pendingSettleRefresh = false;
     const activeWatchIds = new Set(watchRegistrations.map((registration) => registration.watchId));
 
     function scheduleRefresh() {
@@ -144,8 +168,12 @@ export function useAgentSessionWatchRefresh(
       refreshInFlight = true;
       const shouldRefreshSessions = pendingSessionsRefresh;
       const shouldRefreshSessionDetails = pendingSessionDetailsRefresh;
+      const shouldRefreshWorkspaceGraph = pendingWorkspaceGraphRefresh;
+      const shouldSettleRefresh = pendingSettleRefresh;
       pendingSessionsRefresh = false;
       pendingSessionDetailsRefresh = false;
+      pendingWorkspaceGraphRefresh = false;
+      pendingSettleRefresh = false;
 
       try {
         if (shouldRefreshSessions) {
@@ -153,24 +181,30 @@ export function useAgentSessionWatchRefresh(
         }
 
         if (!disposed && shouldRefreshSessionDetails) {
-          await refreshSelectedSessionDetails();
+          await refreshSelectedSessionDetails(shouldRefreshWorkspaceGraph);
 
-          if (settleRefreshTimeoutId !== null) {
-            window.clearTimeout(settleRefreshTimeoutId);
-          }
-          settleRefreshTimeoutId = window.setTimeout(() => {
-            settleRefreshTimeoutId = null;
-            if (!disposed) {
-              void refreshSelectedSessionDetails();
+          if (shouldSettleRefresh) {
+            if (settleRefreshTimeoutId !== null) {
+              window.clearTimeout(settleRefreshTimeoutId);
             }
-          }, WATCH_REFRESH_INTERVAL_MS);
+            settleRefreshTimeoutId = window.setTimeout(() => {
+              settleRefreshTimeoutId = null;
+              if (!disposed) {
+                void refreshSelectedSessionDetails(shouldRefreshWorkspaceGraph);
+              }
+            }, WATCH_REFRESH_INTERVAL_MS);
+          }
         }
       } finally {
         refreshInFlight = false;
 
         if (
           !disposed &&
-          (refreshQueued || pendingSessionsRefresh || pendingSessionDetailsRefresh)
+          (refreshQueued ||
+            pendingSessionsRefresh ||
+            pendingSessionDetailsRefresh ||
+            pendingWorkspaceGraphRefresh ||
+            pendingSettleRefresh)
         ) {
           refreshQueued = false;
           scheduleRefresh();
@@ -178,7 +212,7 @@ export function useAgentSessionWatchRefresh(
       }
     }
 
-    async function refreshSelectedSessionDetails() {
+    async function refreshSelectedSessionDetails(refreshWorkspaceGraph: boolean) {
       const selectedSessionId = selectedSessionIdRef.current;
       if (!selectedSessionId) {
         return;
@@ -192,7 +226,11 @@ export function useAgentSessionWatchRefresh(
           queryKey: queryKeys.sessionDetails(selectedSessionId),
           type: "active",
         }),
-        ...(selectedSession?.cwd
+        queryClient.refetchQueries({
+          queryKey: queryKeys.sessionFileDiffs(selectedSessionId),
+          type: "active",
+        }),
+        ...(refreshWorkspaceGraph && selectedSession?.cwd
           ? [
               queryClient.refetchQueries({
                 queryKey: queryKeys.workspaceGraph(selectedSession.cwd),
@@ -206,11 +244,23 @@ export function useAgentSessionWatchRefresh(
     const unlistenPromise = listen("agent-session-watch-event", (event) => {
       const payload = event.payload as SessionWatchEventPayload;
 
-      if (
-        !payload.watchId ||
-        !activeWatchIds.has(payload.watchId) ||
-        isControlWatchEvent(payload)
-      ) {
+      if (!payload.watchId || !activeWatchIds.has(payload.watchId)) {
+        return;
+      }
+
+      if (isWatchError(payload)) {
+        void logger.error("Agent session watcher reported an error", {
+          error: payload.eventTags.join(", "),
+          provider: payload.provider,
+        });
+        pendingSessionsRefresh = true;
+        pendingSessionDetailsRefresh = true;
+        pendingWorkspaceGraphRefresh = true;
+        scheduleRefresh();
+        return;
+      }
+
+      if (isControlWatchEvent(payload)) {
         return;
       }
 
@@ -220,19 +270,43 @@ export function useAgentSessionWatchRefresh(
       }
 
       pendingSessionsRefresh = true;
-      pendingSessionDetailsRefresh ||= selectedSessionInputChanged(
-        sessionsRef.current,
-        selectedSessionIdRef.current,
-        payload.provider,
-        changedPaths
+      const selectedSessionChanged = sessionsRef.current.some(
+        (session) =>
+          session.id === selectedSessionIdRef.current && session.provider === payload.provider
       );
+      pendingSessionDetailsRefresh ||= selectedSessionChanged;
+      pendingWorkspaceGraphRefresh ||= selectedSessionChanged;
+      pendingSettleRefresh ||= selectedSessionChanged;
 
       scheduleRefresh();
     });
 
-    // A transcript can change while the native watcher is starting, before the
-    // event listener is attached. Re-read the selected session once on startup
-    // so that those writes are not left stale until the app is reopened.
+    const recoverFromMissedEvent = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      pendingSessionsRefresh = true;
+      pendingSessionDetailsRefresh = true;
+      pendingWorkspaceGraphRefresh = true;
+      scheduleRefresh();
+    };
+
+    const recoverSessionData = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      pendingSessionsRefresh = true;
+      pendingSessionDetailsRefresh = true;
+      scheduleRefresh();
+    };
+
+    window.addEventListener("focus", recoverFromMissedEvent);
+    document.addEventListener("visibilitychange", recoverFromMissedEvent);
+    recoveryIntervalId = window.setInterval(recoverSessionData, WATCH_RECOVERY_INTERVAL_MS);
+
+    // Re-read once after native watch registration so writes made during startup
+    // cannot remain stale until the next filesystem event.
+    pendingSessionsRefresh = true;
     pendingSessionDetailsRefresh = true;
     scheduleRefresh();
 
@@ -244,6 +318,11 @@ export function useAgentSessionWatchRefresh(
       if (settleRefreshTimeoutId !== null) {
         window.clearTimeout(settleRefreshTimeoutId);
       }
+      if (recoveryIntervalId !== null) {
+        window.clearInterval(recoveryIntervalId);
+      }
+      window.removeEventListener("focus", recoverFromMissedEvent);
+      document.removeEventListener("visibilitychange", recoverFromMissedEvent);
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [queryClient, selectedSessionIdRef, sessionsRef, watchRegistrations]);
@@ -259,29 +338,6 @@ function isControlWatchEvent(payload: SessionWatchEventPayload) {
   );
 }
 
-function selectedSessionInputChanged(
-  sessions: AgentSessionSummary[],
-  selectedSessionId: string,
-  provider: AgentRuntimeSource["provider"],
-  changedPaths: Set<string>
-) {
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId);
-  if (!selectedSession || selectedSession.provider !== provider) {
-    return false;
-  }
-  if (changedPaths.has(normalizeWatchPath(selectedSession.transcriptPath))) {
-    return true;
-  }
-
-  const runtimeHome = normalizeWatchPath(selectedSession.runtimeHome);
-  if (provider === "claude") {
-    const taskDirectory = normalizeWatchPath(
-      `${runtimeHome}/tasks/${selectedSession.providerSessionId}`
-    );
-    return [...changedPaths].some(
-      (path) => path.startsWith(`${taskDirectory}/`) || path.startsWith(`${runtimeHome}/projects/`)
-    );
-  }
-
-  return [...changedPaths].some((path) => path.startsWith(`${runtimeHome}/sessions/`));
+function isWatchError(payload: SessionWatchEventPayload) {
+  return payload.eventTags.some((tag) => tag.startsWith("watch_error:"));
 }

@@ -147,6 +147,7 @@ export const queryKeys = {
       startEntryIndex,
       endEntryIndex,
     ] as const,
+  sessionFileDiffs: (sessionId: string) => ["session-file-diff", sessionId] as const,
   workspaceGraph: (workspacePath: string) => ["workspace-graph", workspacePath] as const,
 };
 

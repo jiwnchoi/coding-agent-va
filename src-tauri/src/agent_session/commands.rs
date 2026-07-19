@@ -319,6 +319,7 @@ pub async fn start_agent_session_watch(
     })
     .map_err(|error| format!("failed to create watchexec watcher: {error}"))?;
 
+    let mut fs_ready = wx.config.fs_ready();
     wx.config.throttle(Duration::from_millis(500));
     wx.config.pathset(watch_paths.clone());
 
@@ -351,6 +352,18 @@ pub async fn start_agent_session_watch(
             );
         }
     });
+
+    match tokio::time::timeout(Duration::from_secs(5), fs_ready.changed()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => {
+            watch_task.abort();
+            return Err("agent session filesystem watcher stopped during startup".to_string());
+        }
+        Err(_) => {
+            watch_task.abort();
+            return Err("timed out while registering agent session watch paths".to_string());
+        }
+    }
 
     state
         .watches
