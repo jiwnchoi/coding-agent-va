@@ -13,6 +13,7 @@ import { queryKeys } from "@/shared/lib/agent-api";
 import { logger } from "@/shared/lib/logger";
 
 const WATCH_REFRESH_DEBOUNCE_MS = 750;
+const WATCH_SETTLE_REFRESH_DELAY_MS = 1000;
 const EMPTY_WATCH_REGISTRATIONS: SessionWatchRegistration[] = [];
 
 type CurrentRef<T> = {
@@ -129,6 +130,7 @@ export function useAgentSessionWatchRefresh(
 
     let disposed = false;
     let refreshTimeoutId: number | null = null;
+    let settleRefreshTimeoutId: number | null = null;
     let refreshInFlight = false;
     let refreshQueued = false;
     let pendingSessionsRefresh = false;
@@ -169,26 +171,17 @@ export function useAgentSessionWatchRefresh(
         }
 
         if (!disposed && shouldRefreshSessionDetails) {
-          const selectedSessionId = selectedSessionIdRef.current;
-          if (selectedSessionId) {
-            const selectedSession = sessionsRef.current.find(
-              (session) => session.id === selectedSessionId
-            );
-            await Promise.all([
-              queryClient.refetchQueries({
-                queryKey: queryKeys.sessionDetails(selectedSessionId),
-                type: "active",
-              }),
-              ...(selectedSession?.cwd
-                ? [
-                    queryClient.refetchQueries({
-                      queryKey: queryKeys.workspaceGraph(selectedSession.cwd),
-                      type: "active",
-                    }),
-                  ]
-                : []),
-            ]);
+          await refreshSelectedSessionDetails();
+
+          if (settleRefreshTimeoutId !== null) {
+            window.clearTimeout(settleRefreshTimeoutId);
           }
+          settleRefreshTimeoutId = window.setTimeout(() => {
+            settleRefreshTimeoutId = null;
+            if (!disposed) {
+              void refreshSelectedSessionDetails();
+            }
+          }, WATCH_SETTLE_REFRESH_DELAY_MS);
         }
       } finally {
         refreshInFlight = false;
@@ -201,6 +194,31 @@ export function useAgentSessionWatchRefresh(
           scheduleRefresh();
         }
       }
+    }
+
+    async function refreshSelectedSessionDetails() {
+      const selectedSessionId = selectedSessionIdRef.current;
+      if (!selectedSessionId) {
+        return;
+      }
+
+      const selectedSession = sessionsRef.current.find(
+        (session) => session.id === selectedSessionId
+      );
+      await Promise.all([
+        queryClient.refetchQueries({
+          queryKey: queryKeys.sessionDetails(selectedSessionId),
+          type: "active",
+        }),
+        ...(selectedSession?.cwd
+          ? [
+              queryClient.refetchQueries({
+                queryKey: queryKeys.workspaceGraph(selectedSession.cwd),
+                type: "active",
+              }),
+            ]
+          : []),
+      ]);
     }
 
     const unlistenPromise = listen("agent-session-watch-event", (event) => {
@@ -230,10 +248,19 @@ export function useAgentSessionWatchRefresh(
       scheduleRefresh();
     });
 
+    // A transcript can change while the native watcher is starting, before the
+    // event listener is attached. Re-read the selected session once on startup
+    // so that those writes are not left stale until the app is reopened.
+    pendingSessionDetailsRefresh = true;
+    scheduleRefresh();
+
     return () => {
       disposed = true;
       if (refreshTimeoutId !== null) {
         window.clearTimeout(refreshTimeoutId);
+      }
+      if (settleRefreshTimeoutId !== null) {
+        window.clearTimeout(settleRefreshTimeoutId);
       }
       void unlistenPromise.then((unlisten) => unlisten());
     };
