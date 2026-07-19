@@ -40,6 +40,14 @@
   z-index: 50 !important;
 }
 
+.externalRelated {
+  opacity: 1 !important;
+}
+
+.externalDimmed {
+  opacity: 0.3 !important;
+}
+
 .node {
   --context-graph-node-border-color: var(--border);
   border-color: var(--context-graph-node-border-color);

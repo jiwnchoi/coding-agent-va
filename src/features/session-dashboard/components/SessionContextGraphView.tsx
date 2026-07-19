@@ -7,10 +7,13 @@ import {
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
+  useExternalGraphState,
+  useSessionGraphHover,
+} from "@/features/session-dashboard/components/context-graph-external-hover";
+import {
   createNodePopover,
   expandNodePopover,
   resetGraphViewport,
-  useContextGraphHover,
   type NodePopoverState,
 } from "@/features/session-dashboard/components/context-graph-interaction";
 import {
@@ -53,6 +56,8 @@ type SessionContextGraphViewProps = {
   graphScopeKey: string;
   isFileActivityLoading: boolean;
   selectedActivityFile: SelectedActivityFile | null;
+  hoveredFilePaths: string[] | null;
+  onGraphHoverFilePaths: (filePaths: string[] | null) => void;
   selectedSession: AgentSessionSummary | null;
   showReadFiles: boolean;
   onSelectFile: (selection: SelectedActivityFile) => void;
@@ -64,6 +69,8 @@ export function SessionContextGraphView({
   graphScopeKey,
   isFileActivityLoading,
   selectedActivityFile,
+  hoveredFilePaths,
+  onGraphHoverFilePaths,
   selectedSession,
   showReadFiles,
   onSelectFile,
@@ -142,9 +149,15 @@ export function SessionContextGraphView({
     [contextGraph.containsEdges, contextGraph.impactEdges]
   );
   const isLargeGraph = nodes.length + edges.length >= VISIBLE_ELEMENTS_THRESHOLD;
-  const { handleNodeMouseEnter, handleNodeMouseLeave, pinHover, releaseHover } =
-    useContextGraphHover(shellRef, hoverIndex, isPanningRef);
-
+  const { handleGraphNodeMouseEnter, handleGraphNodeMouseLeave, pinHover, releaseHover } =
+    useSessionGraphHover(shellRef, hoverIndex, isPanningRef, onGraphHoverFilePaths, nodes);
+  const { nodes: renderedNodes, edges: renderedEdges } = useExternalGraphState(
+    nodes,
+    edges,
+    hoveredFilePaths,
+    selectedSession?.cwd ?? "",
+    hoverIndex
+  );
   const handleMoveStart = useCallback(() => {
     isPanningRef.current = true;
     shellRef.current?.classList.add(styles.panning);
@@ -217,8 +230,8 @@ export function SessionContextGraphView({
             key={layoutKey}
             className="h-full w-full"
             defaultViewport={initialViewport ?? undefined}
-            nodes={nodes}
-            edges={edges}
+            nodes={renderedNodes}
+            edges={renderedEdges}
             edgeTypes={edgeTypes}
             nodeTypes={nodeTypes}
             nodesDraggable={false}
@@ -237,8 +250,8 @@ export function SessionContextGraphView({
             onDoubleClick={(event) =>
               resetGraphViewport(event, reactFlowInstance, graphKey, viewportByGraphKey)
             }
-            onNodeMouseEnter={handleNodeMouseEnter}
-            onNodeMouseLeave={handleNodeMouseLeave}
+            onNodeMouseEnter={handleGraphNodeMouseEnter}
+            onNodeMouseLeave={handleGraphNodeMouseLeave}
           />
         ) : !selectedSession?.cwd ? (
           <GraphEmptyState

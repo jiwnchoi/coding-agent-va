@@ -1,0 +1,76 @@
+.root {
+  min-width: 0;
+}
+
+.scrollArea {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+
+.scrollArea::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
+.chart {
+  display: block;
+  min-width: 360px;
+}
+
+.connection {
+  fill: none;
+  opacity: 1;
+  stroke-linecap: round;
+  stroke-width: 4;
+  transition: stroke 160ms ease;
+}
+
+.connectionGradientStop {
+  transition: stop-color 160ms ease;
+}
+
+.rowBackground {
+  fill: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+.rowBackground:hover {
+  fill: color-mix(in oklch, var(--accent) 45%, transparent);
+}
+
+.rowBackground:focus,
+.rowBackground:focus-visible {
+  outline: none;
+  stroke: none;
+}
+
+.rowBackgroundSelected {
+  fill: color-mix(in oklch, var(--accent) 75%, transparent);
+}
+
+.event {
+  cursor: pointer;
+  outline: none;
+  opacity: 1;
+}
+
+.event circle {
+  stroke: none;
+  transition:
+    fill 160ms ease,
+    r 120ms ease,
+    stroke-width 120ms ease;
+}
+
+.event:hover circle {
+  r: 9;
+  stroke-width: 3;
+}
+
+.empty {
+  fill: var(--muted-foreground);
+  opacity: 0.28;
+}

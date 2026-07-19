@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import {
   MAX_PROMPT_PANEL_WIDTH,
   MIN_PROMPT_PANEL_WIDTH,
@@ -49,6 +51,7 @@ export function SessionContextGraphTab({
   onShowReadFilesChange: (showReadFiles: boolean) => void;
 }) {
   const promptPanelWidth = useDashboardLayout((state) => state.promptPanelWidth);
+  const [hoveredFilePaths, setHoveredFilePaths] = useState<string[] | null>(null);
   const setPromptPanelWidth = useDashboardLayout((state) => state.setPromptPanelWidth);
   const viewportWidth = useViewportWidth();
   const detailsQuery = useSessionDetails(selectedSession);
@@ -84,12 +87,14 @@ export function SessionContextGraphTab({
           details={detailsQuery.data}
           isLoading={detailsQuery.isPending}
           selectedScope={resolvedSelection}
+          hoveredFilePaths={hoveredFilePaths}
           showReadFiles={showReadFiles}
           workspacePath={selectedSession.cwd}
           onSelectScope={(selection) => {
             onScopeChange(selection);
           }}
           onSelectFile={onSelectFile}
+          onHoverFilePaths={setHoveredFilePaths}
           onShowReadFilesChange={onShowReadFilesChange}
         />
         <HorizontalResizeHandle
@@ -107,6 +112,8 @@ export function SessionContextGraphTab({
           graphScopeKey={`${resolvedSelection?.turnId ?? "session"}:${resolvedSelection?.taskId ?? "prompt"}`}
           isFileActivityLoading={isSessionListLoading || detailsQuery.isPending}
           selectedActivityFile={selectedActivityFile}
+          hoveredFilePaths={hoveredFilePaths}
+          onGraphHoverFilePaths={setHoveredFilePaths}
           selectedSession={selectedSession}
           showReadFiles={showReadFiles}
           onSelectFile={onSelectFile}
