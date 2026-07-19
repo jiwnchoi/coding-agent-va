@@ -5,7 +5,6 @@
 .scrollArea {
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-gutter: stable;
   scrollbar-width: none;
 }
 
@@ -16,7 +15,6 @@
 
 .chart {
   display: block;
-  min-width: 360px;
 }
 
 .connection {
@@ -66,7 +64,7 @@
 }
 
 .event:hover circle {
-  r: 9;
+  r: 8;
   stroke-width: 3;
 }
 

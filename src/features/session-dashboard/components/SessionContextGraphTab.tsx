@@ -80,6 +80,20 @@ export function SessionContextGraphTab({
   const resolvedPanelWidth = Math.min(promptPanelWidth, maxPanelWidth);
   return (
     <div className="absolute inset-0 flex min-h-0">
+      <div className="relative min-w-0 flex-1">
+        <SessionContextGraphView
+          descriptionSettings={descriptionSettings}
+          fileActivity={scopedActivity}
+          graphScopeKey={`${resolvedSelection?.turnId ?? "session"}:${resolvedSelection?.taskId ?? "prompt"}`}
+          isFileActivityLoading={isSessionListLoading || detailsQuery.isPending}
+          selectedActivityFile={selectedActivityFile}
+          hoveredFilePaths={hoveredFilePaths}
+          onGraphHoverFilePaths={setHoveredFilePaths}
+          selectedSession={selectedSession}
+          showReadFiles={showReadFiles}
+          onSelectFile={onSelectFile}
+        />
+      </div>
       <div
         className={cn(styles.promptPanel, "relative h-full min-h-0 flex-none")}
         style={{ width: resolvedPanelWidth }}>
@@ -98,25 +112,11 @@ export function SessionContextGraphTab({
           onShowReadFilesChange={onShowReadFilesChange}
         />
         <HorizontalResizeHandle
-          edge="end"
+          edge="start"
           maxWidth={maxPanelWidth}
           minWidth={MIN_PROMPT_PANEL_WIDTH}
           width={resolvedPanelWidth}
           onResize={setPromptPanelWidth}
-        />
-      </div>
-      <div className="relative min-w-0 flex-1">
-        <SessionContextGraphView
-          descriptionSettings={descriptionSettings}
-          fileActivity={scopedActivity}
-          graphScopeKey={`${resolvedSelection?.turnId ?? "session"}:${resolvedSelection?.taskId ?? "prompt"}`}
-          isFileActivityLoading={isSessionListLoading || detailsQuery.isPending}
-          selectedActivityFile={selectedActivityFile}
-          hoveredFilePaths={hoveredFilePaths}
-          onGraphHoverFilePaths={setHoveredFilePaths}
-          selectedSession={selectedSession}
-          showReadFiles={showReadFiles}
-          onSelectFile={onSelectFile}
         />
       </div>
     </div>

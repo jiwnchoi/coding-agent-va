@@ -45,7 +45,7 @@ export function SessionPromptPanel({
   }
 
   return (
-    <aside className="bg-card border-border flex h-full min-h-0 flex-col border-r">
+    <aside className="bg-card border-border flex h-full min-h-0 flex-col border-l">
       <div className="border-border grid grid-cols-2 border-b p-1" role="tablist">
         <button
           type="button"
@@ -70,12 +70,13 @@ export function SessionPromptPanel({
           <ListTodo className="size-3.5" /> Tasks
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-1 pr-0 pl-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
         {isLoading ? (
           <p className="text-muted-foreground px-2 py-4 text-sm">Loading activity…</p>
         ) : (
           <EventSequenceVisualization
             rows={eventRows}
+            showReadFiles={showReadFiles}
             selectedScope={selectedScope}
             hoveredFilePaths={hoveredFilePaths}
             workspacePath={workspacePath}

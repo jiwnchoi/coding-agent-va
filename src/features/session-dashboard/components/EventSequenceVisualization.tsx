@@ -1,3 +1,4 @@
+import { scaleLinear } from "@visx/scale";
 import { Circle } from "@visx/shape";
 import { useMemo, useRef } from "react";
 
@@ -21,9 +22,11 @@ import styles from "./EventSequenceVisualization.module.css";
 
 const ROW_HEIGHT = 36;
 const HEADER_HEIGHT = 4;
-const SIDE_PADDING = 8;
-const CIRCLE_RADIUS = 7;
-const FILE_SPACING = 18;
+const SIDE_PADDING = 12;
+const CIRCLE_RADIUS = 6;
+const MIN_COLUMN_SPACING = 1;
+const MAX_COLUMN_SPACING = 36;
+const MIN_CHART_WIDTH = 360;
 
 const COLUMNS = [
   { key: "edited", label: "Edited", color: "var(--activity-edited)" },
@@ -44,6 +47,7 @@ type EventPoint = EventSequencePoint & { activityKey: SelectedActivityFile["acti
 
 export function EventSequenceVisualization({
   rows,
+  showReadFiles,
   selectedScope,
   hoveredFilePaths,
   workspacePath,
@@ -52,6 +56,7 @@ export function EventSequenceVisualization({
   onHoverFilePaths,
 }: {
   rows: EventRow[];
+  showReadFiles: boolean;
   selectedScope: SessionScopeSelection | null;
   hoveredFilePaths: string[] | null;
   workspacePath: string | null;
@@ -59,11 +64,11 @@ export function EventSequenceVisualization({
   onSelectFile: (selection: SelectedActivityFile) => void;
   onHoverFilePaths: (filePaths: string[] | null) => void;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const { width } = useElementSize(rootRef);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const { width } = useElementSize(scrollAreaRef);
   const rowGroups = useMemo(
-    () => rows.map((row) => buildEventGroups(row.activity, workspacePath)),
-    [rows, workspacePath]
+    () => rows.map((row) => buildEventGroups(row.activity, workspacePath, showReadFiles)),
+    [rows, showReadFiles, workspacePath]
   );
   const { columnByFile, columnCount } = useMemo(
     () =>
@@ -74,8 +79,18 @@ export function EventSequenceVisualization({
       ),
     [rowGroups]
   );
-  const contentWidth = SIDE_PADDING * 2 + Math.max(1, columnCount) * FILE_SPACING;
-  const chartWidth = Math.max(width, contentWidth, 360);
+  const columnTrackCount = Math.max(0, columnCount - 1);
+  const availableTrackWidth = Math.max(0, width - SIDE_PADDING * 2);
+  const columnSpacing =
+    columnTrackCount > 0
+      ? scaleLinear({
+          domain: [columnTrackCount * MIN_COLUMN_SPACING, columnTrackCount * MAX_COLUMN_SPACING],
+          range: [MIN_COLUMN_SPACING, MAX_COLUMN_SPACING],
+          clamp: true,
+        })(availableTrackWidth)
+      : 0;
+  const contentWidth = SIDE_PADDING * 2 + columnTrackCount * columnSpacing;
+  const chartWidth = Math.max(width, contentWidth, MIN_CHART_WIDTH);
   const height = HEADER_HEIGHT + Math.max(rows.length, 1) * ROW_HEIGHT;
 
   const points = useMemo(() => {
@@ -89,7 +104,10 @@ export function EventSequenceVisualization({
           nextPoints.push({
             ...event,
             column: column.key,
-            x: SIDE_PADDING + (columnByFile.get(event.key) ?? 0) * FILE_SPACING,
+            x:
+              columnCount > 1
+                ? SIDE_PADDING + (columnByFile.get(event.key) ?? 0) * columnSpacing
+                : chartWidth / 2,
             y: HEADER_HEIGHT + ROW_HEIGHT * rowIndex + ROW_HEIGHT / 2,
             rowIndex,
           });
@@ -97,7 +115,7 @@ export function EventSequenceVisualization({
       });
     });
     return nextPoints;
-  }, [columnByFile, rowGroups, rows]);
+  }, [chartWidth, columnByFile, columnCount, columnSpacing, rowGroups, rows]);
 
   const connections = useMemo(() => {
     const lastPointByFile = new Map<string, EventPoint>();
@@ -124,8 +142,9 @@ export function EventSequenceVisualization({
   }
 
   return (
-    <div ref={rootRef} className={styles.root}>
+    <div className={styles.root}>
       <div
+        ref={scrollAreaRef}
         className={styles.scrollArea}
         role="img"
         aria-label="Event sequence file activity visualization">
@@ -230,7 +249,11 @@ export function buildEventRows(
   );
 }
 
-function buildEventGroups(fileActivity: AgentSessionFileActivity, workspacePath: string | null) {
+function buildEventGroups(
+  fileActivity: AgentSessionFileActivity,
+  workspacePath: string | null,
+  showReadFiles: boolean
+) {
   const normalize = (filePath: string) => normalizeWorkspacePath(filePath, workspacePath ?? "");
   const read = new Map(fileActivity.readFiles.map((filePath) => [normalize(filePath), filePath]));
   const impacted = new Map(
@@ -262,6 +285,8 @@ function buildEventGroups(fileActivity: AgentSessionFileActivity, workspacePath:
   add("edited", edited, "edited");
   add("readImpacted", new Map([...impacted].filter(([key]) => read.has(key))), "impacted");
   add("impacted", impacted, "impacted");
-  add("read", read, "read");
+  if (showReadFiles) {
+    add("read", read, "read");
+  }
   return groups;
 }
