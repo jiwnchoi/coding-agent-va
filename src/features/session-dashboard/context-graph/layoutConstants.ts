@@ -1,4 +1,4 @@
-export const NODE_WIDTH = 156;
+export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 44;
 export const HORIZONTAL_GAP = 28;
 export const VERTICAL_GAP = 16;

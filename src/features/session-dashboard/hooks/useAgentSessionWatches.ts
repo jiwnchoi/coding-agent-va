@@ -12,8 +12,7 @@ import type {
 import { queryKeys } from "@/shared/lib/agent-api";
 import { logger } from "@/shared/lib/logger";
 
-const WATCH_REFRESH_DEBOUNCE_MS = 750;
-const WATCH_SETTLE_REFRESH_DELAY_MS = 1000;
+const WATCH_REFRESH_INTERVAL_MS = 500;
 const EMPTY_WATCH_REGISTRATIONS: SessionWatchRegistration[] = [];
 
 type CurrentRef<T> = {
@@ -125,14 +124,15 @@ export function useAgentSessionWatchRefresh(
     const activeWatchIds = new Set(watchRegistrations.map((registration) => registration.watchId));
 
     function scheduleRefresh() {
+      // Keep a trailing refresh at a fixed cadence while events continue to arrive.
       if (refreshTimeoutId !== null) {
-        window.clearTimeout(refreshTimeoutId);
+        return;
       }
 
       refreshTimeoutId = window.setTimeout(() => {
         refreshTimeoutId = null;
         void refreshSessions();
-      }, WATCH_REFRESH_DEBOUNCE_MS);
+      }, WATCH_REFRESH_INTERVAL_MS);
     }
 
     async function refreshSessions() {
@@ -163,7 +163,7 @@ export function useAgentSessionWatchRefresh(
             if (!disposed) {
               void refreshSelectedSessionDetails();
             }
-          }, WATCH_SETTLE_REFRESH_DELAY_MS);
+          }, WATCH_REFRESH_INTERVAL_MS);
         }
       } finally {
         refreshInFlight = false;
