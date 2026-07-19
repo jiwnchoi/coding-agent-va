@@ -3,14 +3,12 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 use watchexec::WatchedPath;
 
-use super::git::collect_git_index_paths_from_sessions;
 use super::paths::normalize_absolute_activity_path;
 use super::protocols::provider_key;
 use super::state::AgentSessionWatchState;
 use super::time::now_timestamp_ms;
 use super::types::{
-    AgentSessionProvider, AgentSessionSummary, SessionWatchEventPayload, SessionWatchPlan,
-    SessionWatchTarget,
+    AgentSessionProvider, SessionWatchEventPayload, SessionWatchPlan, SessionWatchTarget,
 };
 
 pub(crate) const AGENT_SESSION_WATCH_EVENT: &str = "agent-session-watch-event";
@@ -19,9 +17,7 @@ pub(crate) fn build_session_watch_plan(
     provider: AgentSessionProvider,
     watch_roots: Vec<(PathBuf, bool, String)>,
     runtime_home: PathBuf,
-    sessions: &[AgentSessionSummary],
 ) -> SessionWatchPlan {
-    let git_index_paths = collect_git_index_paths_from_sessions(sessions);
     let mut watch_targets = Vec::new();
 
     for (target_path, recursive, reason) in watch_roots {
@@ -34,25 +30,11 @@ pub(crate) fn build_session_watch_plan(
         );
     }
 
-    for git_index_path in &git_index_paths {
-        push_watch_target(
-            &mut watch_targets,
-            existing_or_parent(git_index_path, &runtime_home),
-            false,
-            git_index_path.exists(),
-            "watch git index updates".to_string(),
-        );
-    }
-
     SessionWatchPlan {
         watch_id: watch_id_for_provider_path(provider, &runtime_home),
         provider,
         runtime_home: runtime_home.display().to_string(),
         watch_targets,
-        git_index_paths: git_index_paths
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect(),
     }
 }
 
@@ -99,12 +81,10 @@ pub(crate) fn is_relevant_watch_path(
     provider: AgentSessionProvider,
     path: &Path,
     runtime_home: &Path,
-    git_index_paths: &[PathBuf],
 ) -> bool {
     provider
         .protocol()
         .is_relevant_session_path(path, runtime_home)
-        || git_index_paths.iter().any(|index_path| path == index_path)
 }
 
 pub(crate) fn normalize_watch_event_path(path: &Path) -> PathBuf {

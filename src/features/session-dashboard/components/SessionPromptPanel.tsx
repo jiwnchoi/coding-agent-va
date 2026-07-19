@@ -1,15 +1,18 @@
 import { Check, Circle, Files, ListTodo, LoaderCircle, MessageSquareText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { SelectedActivityFile } from "@/features/session-dashboard/lib/session-watch";
+import { messagePreview } from "@/features/session-dashboard/lib/session-message";
+import { buildSessionScopeSelection } from "@/features/session-dashboard/lib/session-scope";
+import type {
+  SelectedActivityFile,
+  SessionScopeSelection,
+} from "@/features/session-dashboard/lib/session-watch";
 import type { AgentSessionDetails, AgentSessionTaskStatus } from "@/shared/lib/generated/bindings";
 import { cn } from "@/shared/lib/utils";
 
 import { FileActivityMetrics } from "./FileActivityMetrics";
 import { SessionMarkdownMessage } from "./SessionMarkdownMessage";
 import styles from "./SessionPromptPanel.module.css";
-
-export type SessionScopeSelection = { turnId: string; taskId: string | null };
 
 type TrackingMode = "prompts" | "tasks";
 
@@ -18,14 +21,6 @@ const STATUS_ICON = {
   in_progress: LoaderCircle,
   pending: Circle,
 } satisfies Record<AgentSessionTaskStatus, typeof Circle>;
-const MESSAGE_PREVIEW_LENGTH = 120;
-
-function messagePreview(text: string) {
-  const firstLine = text.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  const preview = firstLine.slice(0, MESSAGE_PREVIEW_LENGTH).trimEnd();
-  return preview.length < firstLine.length || text.trim() !== firstLine ? `${preview}…` : preview;
-}
-
 export function SessionPromptPanel({
   details,
   isLoading,
@@ -217,7 +212,9 @@ function PromptTrackingList({
                     ) : null
                   }
                   onPress={() => {
-                    onSelectScope(isSelected ? null : { turnId: turn.id, taskId: null });
+                    onSelectScope(
+                      isSelected ? null : buildSessionScopeSelection(turn.id, null, turn)
+                    );
                   }}
                   onToggle={() => onToggleMessage(promptMessageId)}
                   onOpenFile={onSelectFile}
@@ -282,7 +279,9 @@ function TaskTrackingList({
                 isSelected && "bg-accent"
               )}
               aria-pressed={isSelected}
-              onClick={() => onSelectScope(isSelected ? null : { turnId, taskId: task.id })}>
+              onClick={() =>
+                onSelectScope(isSelected ? null : buildSessionScopeSelection(turnId, task.id, task))
+              }>
               <span className="flex items-start gap-2 text-sm">
                 <Icon
                   className={cn(

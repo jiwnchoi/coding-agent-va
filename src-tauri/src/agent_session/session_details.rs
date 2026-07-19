@@ -61,6 +61,7 @@ pub(crate) fn read_session_details_cached(
                 .map(|prompt| (index, prompt))
         })
         .collect::<Vec<_>>();
+    let prompt_indexes = deduplicate_codex_event_prompts(provider, &entries, prompt_indexes);
     let mut turns = Vec::with_capacity(prompt_indexes.len());
     let mut interrupted_turns = Vec::with_capacity(prompt_indexes.len());
     let mut session_activity = ActivityAccumulator::default();
@@ -73,7 +74,10 @@ pub(crate) fn read_session_details_cached(
         let (turn, activity) = build_turn(
             provider,
             provider_session_id,
-            position,
+            TurnLocation {
+                position,
+                entry_offset: *start,
+            },
             prompt,
             turn_entries,
             &claude_tasks,
@@ -217,6 +221,7 @@ fn consolidate_interrupted_turns(
         owner.summary = turn.summary.take();
         owner.tasks.append(&mut turn.tasks);
         merge_file_activity(&mut owner.file_activity, turn.file_activity);
+        owner.end_entry_index = owner.end_entry_index.max(turn.end_entry_index);
         merge_next = current_merges_with_next;
     }
     *turns = consolidated;
@@ -270,6 +275,8 @@ fn consolidate_session_tasks(turns: &mut [AgentSessionPromptTurn]) {
                 if update.summary.is_some() {
                     owner.summary = update.summary;
                 }
+                owner.start_entry_index = owner.start_entry_index.min(update.start_entry_index);
+                owner.end_entry_index = owner.end_entry_index.max(update.end_entry_index);
                 merge_file_activity(&mut owner.file_activity, update.file_activity);
             } else {
                 owner_by_task_id.insert(task_id, (turn_index, task_index));
@@ -342,22 +349,29 @@ struct TaskBuilder {
     activity: ActivityAccumulator,
 }
 
+struct TurnLocation {
+    position: usize,
+    entry_offset: usize,
+}
+
 fn build_turn(
     provider: AgentSessionProvider,
     session_id: &str,
-    turn_position: usize,
+    location: TurnLocation,
     prompt: &str,
     entries: &[serde_json::Value],
     claude_tasks: &HashMap<String, ClaudeTaskFile>,
     cwd: Option<&str>,
 ) -> (AgentSessionPromptTurn, ActivityAccumulator) {
+    let entry_offset = location.entry_offset;
     let mut turn_activity = ActivityAccumulator::default();
     let mut tasks = HashMap::<String, TaskBuilder>::new();
     let mut order = Vec::<String>::new();
     let mut active_task = None::<String>;
     let workspace_root = cwd.map(PathBuf::from);
 
-    for entry in entries {
+    for (entry_index, entry) in entries.iter().enumerate() {
+        let global_entry_index = entry_offset + entry_index;
         if let Some(text) = assistant_text(provider, entry) {
             if let Some(task) = active_task.as_ref().and_then(|key| tasks.get_mut(key)) {
                 task.task.summary = Some(text);
@@ -386,6 +400,8 @@ fn build_turn(
                                         position,
                                         summary: None,
                                         file_activity: empty_activity(),
+                                        start_entry_index: global_entry_index,
+                                        end_entry_index: global_entry_index,
                                     },
                                     activity: ActivityAccumulator::default(),
                                 },
@@ -437,6 +453,8 @@ fn build_turn(
                                     position: order.len() - 1,
                                     summary: None,
                                     file_activity: empty_activity(),
+                                    start_entry_index: global_entry_index,
+                                    end_entry_index: global_entry_index,
                                 },
                                 activity: ActivityAccumulator::default(),
                             },
@@ -473,6 +491,7 @@ fn build_turn(
                 workspace_root.as_deref(),
                 &mut task.activity,
             );
+            task.task.end_entry_index = global_entry_index + 1;
         }
     }
 
@@ -495,12 +514,14 @@ fn build_turn(
         .collect();
     (
         AgentSessionPromptTurn {
-            id: format!("{session_id}:prompt:{turn_position}"),
+            id: format!("{session_id}:prompt:{}", location.position),
             prompts: vec![prompt.to_string()],
             summary: final_turn_summary(provider, entries),
             tasks,
             file_activity: finish_file_activity(cwd, turn_activity.clone()),
             started_at_ms: entries.first().map(entry_timestamp_ms).unwrap_or_default(),
+            start_entry_index: entry_offset,
+            end_entry_index: entry_offset + entries.len(),
         },
         turn_activity,
     )
@@ -539,12 +560,62 @@ fn collect_entry_activity(
 }
 
 fn prompt_text(provider: AgentSessionProvider, entry: &serde_json::Value) -> Option<String> {
+    if matches!(provider, AgentSessionProvider::Codex)
+        && entry.get("type").and_then(serde_json::Value::as_str) == Some("event_msg")
+    {
+        let payload = entry.get("payload")?;
+        if payload.get("type").and_then(serde_json::Value::as_str) == Some("user_message") {
+            return payload
+                .get("message")
+                .or_else(|| payload.get("content"))
+                .and_then(text_content)
+                .map(|text| strip_image_attachment_markers(&text))
+                .filter(|text| !text.trim().is_empty());
+        }
+    }
+
     let message = provider_message(provider, entry)?;
     (message_role(message) == Some("user"))
         .then(|| message_content(message).and_then(text_content))
         .flatten()
         .map(|text| strip_image_attachment_markers(&text))
         .filter(|text| !text.trim().is_empty())
+}
+
+fn deduplicate_codex_event_prompts(
+    provider: AgentSessionProvider,
+    entries: &[serde_json::Value],
+    prompts: Vec<(usize, String)>,
+) -> Vec<(usize, String)> {
+    if !matches!(provider, AgentSessionProvider::Codex) {
+        return prompts;
+    }
+
+    let mut deduplicated = Vec::with_capacity(prompts.len());
+    for (index, prompt) in prompts {
+        let is_duplicate = deduplicated
+            .last()
+            .is_some_and(|(previous_index, previous_prompt)| {
+                *previous_index + 1 == index
+                    && previous_prompt == &prompt
+                    && (is_codex_event_user_message(&entries[*previous_index])
+                        || is_codex_event_user_message(&entries[index]))
+            });
+        if is_duplicate {
+            deduplicated.pop();
+        }
+        deduplicated.push((index, prompt));
+    }
+    deduplicated
+}
+
+fn is_codex_event_user_message(entry: &serde_json::Value) -> bool {
+    entry.get("type").and_then(serde_json::Value::as_str) == Some("event_msg")
+        && entry
+            .get("payload")
+            .and_then(|payload| payload.get("type"))
+            .and_then(serde_json::Value::as_str)
+            == Some("user_message")
 }
 
 fn assistant_text(provider: AgentSessionProvider, entry: &serde_json::Value) -> Option<String> {
@@ -941,6 +1012,52 @@ mod tests {
     }
 
     #[test]
+    fn parses_codex_event_user_message_as_a_prompt() {
+        let entry = serde_json::json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "user_message",
+                "message": "----"
+            }
+        });
+
+        assert_eq!(
+            prompt_text(AgentSessionProvider::Codex, &entry).as_deref(),
+            Some("----")
+        );
+    }
+
+    #[test]
+    fn deduplicates_adjacent_codex_event_and_response_prompts() {
+        let entries = vec![
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "same prompt"}
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "same prompt"}]
+                }
+            }),
+        ];
+
+        assert_eq!(
+            deduplicate_codex_event_prompts(
+                AgentSessionProvider::Codex,
+                &entries,
+                vec![
+                    (0, "same prompt".to_string()),
+                    (1, "same prompt".to_string())
+                ]
+            ),
+            vec![(1, "same prompt".to_string())]
+        );
+    }
+
+    #[test]
     fn distributes_session_impacts_to_matching_activity_segments() {
         let mut activity = AgentSessionFileActivity {
             read_files: Vec::new(),
@@ -1029,6 +1146,20 @@ mod tests {
             .edited_files
             .iter()
             .any(|path| path.ends_with("src/App.tsx")));
+        assert_eq!(
+            (
+                details.turns[0].start_entry_index,
+                details.turns[0].end_entry_index
+            ),
+            (1, 7)
+        );
+        assert_eq!(
+            (
+                details.turns[0].tasks[0].start_entry_index,
+                details.turns[0].tasks[0].end_entry_index
+            ),
+            (2, 5)
+        );
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -1089,6 +1220,14 @@ mod tests {
             .iter()
             .any(|path| path.ends_with("second.ts")));
         assert_eq!(details.turns[0].summary.as_deref(), Some("Final summary"));
+        assert_eq!(
+            (
+                details.turns[0].start_entry_index,
+                details.turns[0].end_entry_index
+            ),
+            (0, 10)
+        );
+        assert_eq!((task.start_entry_index, task.end_entry_index), (1, 8));
         assert!(details.turns[0]
             .file_activity
             .edited_files

@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import {
   MAX_PROMPT_PANEL_WIDTH,
   MIN_PROMPT_PANEL_WIDTH,
@@ -10,6 +8,7 @@ import { useViewportWidth } from "@/features/session-dashboard/hooks/useViewport
 import type {
   AgentSessionSummary,
   SelectedActivityFile,
+  SessionScopeSelection,
 } from "@/features/session-dashboard/lib/session-watch";
 import { HorizontalResizeHandle } from "@/shared/components/HorizontalResizeHandle";
 import type { DescriptionSettings } from "@/shared/lib/generated/bindings";
@@ -17,7 +16,7 @@ import { cn } from "@/shared/lib/utils";
 
 import styles from "./SessionContextGraphTab.module.css";
 import { SessionContextGraphView } from "./SessionContextGraphView";
-import { SessionPromptPanel, type SessionScopeSelection } from "./SessionPromptPanel";
+import { SessionPromptPanel } from "./SessionPromptPanel";
 
 const MIN_GRAPH_WIDTH = 420;
 const EMPTY_FILE_ACTIVITY = {
@@ -34,6 +33,7 @@ export function SessionContextGraphTab({
   isSessionListLoading,
   selectedActivityFile,
   selectedSession,
+  scopeSelection,
   onScopeChange,
   onSelectFile,
   onShowReadFilesChange,
@@ -43,13 +43,13 @@ export function SessionContextGraphTab({
   isSessionListLoading: boolean;
   selectedActivityFile: SelectedActivityFile | null;
   selectedSession: AgentSessionSummary;
-  onScopeChange: () => void;
+  scopeSelection: SessionScopeSelection | null;
+  onScopeChange: (selection: SessionScopeSelection | null) => void;
   onSelectFile: (selection: SelectedActivityFile) => void;
   onShowReadFilesChange: (showReadFiles: boolean) => void;
 }) {
   const promptPanelWidth = useDashboardLayout((state) => state.promptPanelWidth);
   const setPromptPanelWidth = useDashboardLayout((state) => state.setPromptPanelWidth);
-  const [scopeSelection, setScopeSelection] = useState<SessionScopeSelection | null>(null);
   const viewportWidth = useViewportWidth();
   const detailsQuery = useSessionDetails(selectedSession);
   const turns = detailsQuery.data?.turns ?? [];
@@ -88,8 +88,7 @@ export function SessionContextGraphTab({
           sessionTitle={selectedSession.title}
           workspacePath={selectedSession.cwd}
           onSelectScope={(selection) => {
-            setScopeSelection(selection);
-            onScopeChange();
+            onScopeChange(selection);
           }}
           onSelectFile={onSelectFile}
           onShowReadFilesChange={onShowReadFilesChange}

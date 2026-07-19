@@ -65,6 +65,8 @@ const taskSchema = object({
   position: number(),
   summary: nullable(string()),
   fileActivity: activitySchema,
+  startEntryIndex: number(),
+  endEntryIndex: number(),
 });
 const detailsSchema = object({
   fileActivity: activitySchema,
@@ -76,6 +78,8 @@ const detailsSchema = object({
       tasks: array(taskSchema),
       fileActivity: activitySchema,
       startedAtMs: number(),
+      startEntryIndex: number(),
+      endEntryIndex: number(),
     })
   ),
 });
@@ -87,7 +91,6 @@ const diffSchema = object({
   diffBaseLabel: string(),
   diffTargetLabel: string(),
   fileMissing: boolean(),
-  isTracked: boolean(),
 });
 const graphSchema = object({
   nodes: array(
@@ -127,7 +130,23 @@ const settingsSchema = object({
 export const queryKeys = {
   sessions: (runtimeHomes: Record<string, string>) => ["agent-sessions", runtimeHomes] as const,
   sessionDetails: (sessionId: string) => ["session-details", sessionId] as const,
-  fileDiff: (cwd: string | null, filePath: string) => ["session-file-diff", cwd, filePath] as const,
+  fileDiff: (
+    sessionId: string,
+    updatedAtMs: number,
+    filePath: string,
+    replaySession: boolean,
+    startEntryIndex: number | null,
+    endEntryIndex: number | null
+  ) =>
+    [
+      "session-file-diff",
+      sessionId,
+      updatedAtMs,
+      filePath,
+      replaySession,
+      startEntryIndex,
+      endEntryIndex,
+    ] as const,
   workspaceGraph: (workspacePath: string) => ["workspace-graph", workspacePath] as const,
 };
 
@@ -151,8 +170,13 @@ export async function getAgentSessionDetails(args: {
   return parse(detailsSchema, await invoke<unknown>("get_agent_session_details", args));
 }
 export async function getAgentSessionFileDiff(args: {
+  provider: string;
+  transcriptPath: string;
   filePath: string;
   cwd: string | null;
+  replaySession: boolean;
+  startEntryIndex: number | null;
+  endEntryIndex: number | null;
 }): Promise<AgentSessionFileDiff> {
   return parse(diffSchema, await invoke<unknown>("get_agent_session_file_diff", args));
 }

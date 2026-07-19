@@ -66,6 +66,8 @@ pub struct AgentSessionTask {
     pub position: usize,
     pub summary: Option<String>,
     pub file_activity: AgentSessionFileActivity,
+    pub start_entry_index: usize,
+    pub end_entry_index: usize,
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -84,6 +86,8 @@ pub struct AgentSessionPromptTurn {
     pub tasks: Vec<AgentSessionTask>,
     pub file_activity: AgentSessionFileActivity,
     pub started_at_ms: u64,
+    pub start_entry_index: usize,
+    pub end_entry_index: usize,
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -102,7 +106,6 @@ pub struct SessionWatchPlan {
     pub provider: AgentSessionProvider,
     pub runtime_home: String,
     pub watch_targets: Vec<SessionWatchTarget>,
-    pub git_index_paths: Vec<String>,
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -112,7 +115,6 @@ pub struct SessionWatchRegistration {
     pub provider: AgentSessionProvider,
     pub runtime_home: String,
     pub watch_targets: Vec<SessionWatchTarget>,
-    pub git_index_paths: Vec<String>,
 }
 
 #[derive(Clone, Serialize, TS)]
@@ -154,7 +156,6 @@ pub struct AgentSessionFileDiff {
     pub diff_base_label: String,
     pub diff_target_label: String,
     pub file_missing: bool,
-    pub is_tracked: bool,
 }
 
 #[derive(Clone, Deserialize, TS)]

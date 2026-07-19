@@ -16,6 +16,7 @@ import {
   useAgentSessionWatchRefresh,
   useAgentSessionWatches,
   useSessionState,
+  type SessionScopeSelection,
 } from "@/features/session-dashboard";
 import { useSessionFileDiff } from "@/features/session-dashboard/hooks/useSessionFileDiff";
 import {
@@ -56,6 +57,7 @@ function App() {
   const [selectedActivityFile, setSelectedActivityFile] = useState<SelectedActivityFile | null>(
     null
   );
+  const [sessionScope, setSessionScope] = useState<SessionScopeSelection | null>(null);
   const reconciledSessionPageCountRef = useRef(0);
   const sessionsQuery = useInfiniteQuery({
     queryKey: queryKeys.sessions(settings.runtimeHomes),
@@ -88,7 +90,7 @@ function App() {
     .filter((session): session is AgentSessionSummary => session !== null);
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const { clearSelectedFileDiffState, fileDiffErrorMessage, isFileDiffLoading, selectedFileDiff } =
-    useSessionFileDiff(selectedSession, selectedActivityFile);
+    useSessionFileDiff(selectedSession, selectedActivityFile, sessionScope);
   const editorTheme = useEditorTheme(settings.monacoTheme);
 
   function handleSelectSession(sessionId: string) {
@@ -98,6 +100,7 @@ function App() {
     }
     setSearchQuery("");
     setSelectedActivityFile(null);
+    setSessionScope(null);
     clearSelectedFileDiffState();
   }
 
@@ -157,7 +160,7 @@ function App() {
     }
   }, [loadedSessions, reconcileSessions, sessionsQuery.data, sessionsQuery.error]);
 
-  const watchRegistrations = useAgentSessionWatches(runtimeSources, loadedSessions);
+  const watchRegistrations = useAgentSessionWatches(runtimeSources);
 
   useEffect(() => {
     let disposed = false;
@@ -276,7 +279,11 @@ function App() {
                     isSessionListLoading={isLoading}
                     selectedActivityFile={selectedActivityFile}
                     selectedSession={selectedSession}
-                    onScopeChange={handleCloseFileViewer}
+                    scopeSelection={sessionScope}
+                    onScopeChange={(selection) => {
+                      setSessionScope(selection);
+                      handleCloseFileViewer();
+                    }}
                     onSelectFile={setSelectedActivityFile}
                     onShowReadFilesChange={(showReadFiles) => updateSettings({ showReadFiles })}
                   />

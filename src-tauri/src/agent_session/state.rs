@@ -4,14 +4,13 @@ use std::sync::{Arc, Mutex};
 use tauri::async_runtime::JoinHandle;
 
 use super::protocols::AgentSessionCandidate;
-use super::types::{AgentSessionProvider, AgentSessionSummary};
+use super::types::AgentSessionProvider;
 
 #[derive(Clone, Default)]
 pub struct AgentSessionWatchState {
     pub(crate) watches: Arc<Mutex<HashMap<String, SessionWatchHandle>>>,
     pub(crate) session_candidates:
         Arc<Mutex<HashMap<SessionListCacheKey, Vec<AgentSessionCandidate>>>>,
-    pub(crate) loaded_sessions: Arc<Mutex<HashMap<SessionListCacheKey, Vec<AgentSessionSummary>>>>,
 }
 
 pub(crate) struct SessionWatchHandle {

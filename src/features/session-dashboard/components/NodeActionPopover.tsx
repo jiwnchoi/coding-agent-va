@@ -6,6 +6,8 @@ import styles from "@/features/session-dashboard/context-graph/ContextGraphView.
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/lib/utils";
 
+const DESCRIPTION_SCROLL_THRESHOLD_PX = 8;
+
 export function NodeActionPopover({
   description,
   errorMessage,
@@ -28,6 +30,8 @@ export function NodeActionPopover({
   onOpenCode: () => void;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const descriptionScrollRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollDescriptionRef = useRef(true);
   const dragStateRef = useRef<{
     offsetX: number;
     offsetY: number;
@@ -133,6 +137,27 @@ export function NodeActionPopover({
     };
   }, [hasResult, onClose]);
 
+  useEffect(() => {
+    const descriptionScroll = descriptionScrollRef.current;
+    if (!descriptionScroll || !shouldAutoScrollDescriptionRef.current) return;
+    descriptionScroll.scrollTop = descriptionScroll.scrollHeight;
+  }, [description]);
+
+  function handleDescriptionScroll() {
+    const descriptionScroll = descriptionScrollRef.current;
+    if (!descriptionScroll) return;
+    shouldAutoScrollDescriptionRef.current =
+      descriptionScroll.scrollHeight -
+        descriptionScroll.clientHeight -
+        descriptionScroll.scrollTop <=
+      DESCRIPTION_SCROLL_THRESHOLD_PX;
+  }
+
+  function handleDescribe() {
+    shouldAutoScrollDescriptionRef.current = true;
+    onDescribe();
+  }
+
   return (
     <div
       ref={popoverRef}
@@ -164,7 +189,7 @@ export function NodeActionPopover({
 
       {!hasResult ? (
         <div className="flex gap-1 p-1">
-          <Button variant="ghost" size="sm" onClick={onDescribe}>
+          <Button variant="ghost" size="sm" onClick={handleDescribe}>
             <Sparkles />
             Describe
           </Button>
@@ -174,7 +199,10 @@ export function NodeActionPopover({
           </Button>
         </div>
       ) : (
-        <div className="max-h-[min(32rem,70vh)] overflow-y-auto p-4">
+        <div
+          ref={descriptionScrollRef}
+          className="max-h-[min(32rem,70vh)] overflow-y-auto p-4"
+          onScroll={handleDescriptionScroll}>
           {isLoading && !description ? (
             <div className="text-muted-foreground flex min-h-28 items-center justify-center gap-2 text-sm">
               <LoaderCircle className="size-4 animate-spin" />
@@ -183,7 +211,7 @@ export function NodeActionPopover({
           ) : errorMessage ? (
             <div className="space-y-3">
               <p className="text-destructive text-sm whitespace-pre-wrap">{errorMessage}</p>
-              <Button variant="outline" size="sm" onClick={onDescribe}>
+              <Button variant="outline" size="sm" onClick={handleDescribe}>
                 <RotateCw /> Retry
               </Button>
             </div>

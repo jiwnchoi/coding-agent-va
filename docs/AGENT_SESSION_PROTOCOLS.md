@@ -64,3 +64,18 @@ sessions so description generation does not modify the selected source session.
 ## Frontend Model
 
 The frontend consumes provider-neutral `AgentSessionSummary` records. Session IDs are namespaced as `<provider>:<providerSessionId>` so sessions from different agents can be shown in the same tabs and picker without collision.
+
+## Session file diffs
+
+Edited and deleted file diffs are reconstructed from the selected transcript rather than from Git.
+Codex `apply_patch` calls and Claude Code/Pi Agent `Edit`, `MultiEdit`, and `Write` calls provide
+the before/after operations. The current workspace file is used only as an anchor for unchanged
+surrounding content; if it no longer matches, the viewer falls back to the transcript's changed
+fragments. Read and impacted files remain read-only workspace snapshots.
+Selecting a prompt or task passes its transcript entry range to the same replay engine, so the diff
+contains only edits attributed to that selection. `All changes` omits the range and replays the full
+session.
+
+Shell commands that mutate a file without recording before/after content cannot be replayed. In
+that case the diff viewer reports that the session has no replayable edit instead of substituting a
+Git comparison from a different point in time.

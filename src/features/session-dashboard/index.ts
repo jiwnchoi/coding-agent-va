@@ -6,6 +6,7 @@ export {
   SessionPickerDropdown,
   SessionTabBar,
 } from "./components";
+export type { SessionScopeSelection } from "./lib/session-watch";
 export { buildShortcuts, buildTabNumberShortcutActions } from "./keyboard-shortcuts";
 export {
   useAgentSessionWatchRefresh,

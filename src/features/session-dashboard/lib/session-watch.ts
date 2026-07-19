@@ -30,6 +30,13 @@ export type SelectedActivityFile = {
   filePath: string;
 };
 
+export type SessionScopeSelection = {
+  turnId: string;
+  taskId: string | null;
+  startEntryIndex: number;
+  endEntryIndex: number;
+};
+
 export function buildActivitySections(fileActivity: AgentSessionFileActivity): ActivitySection[] {
   return [
     { key: "read", title: "Read", icon: Eye, files: fileActivity.readFiles },

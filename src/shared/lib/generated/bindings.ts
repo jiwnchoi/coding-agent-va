@@ -78,6 +78,8 @@ export type AgentSessionTask = {
   position: number;
   summary: string | null;
   fileActivity: AgentSessionFileActivity;
+  startEntryIndex: number;
+  endEntryIndex: number;
 };
 
 export type AgentSessionDetails = {
@@ -92,6 +94,8 @@ export type AgentSessionPromptTurn = {
   tasks: Array<AgentSessionTask>;
   fileActivity: AgentSessionFileActivity;
   startedAtMs: number;
+  startEntryIndex: number;
+  endEntryIndex: number;
 };
 
 export type SessionWatchTarget = {
@@ -106,7 +110,6 @@ export type SessionWatchPlan = {
   provider: AgentSessionProvider;
   runtimeHome: string;
   watchTargets: Array<SessionWatchTarget>;
-  gitIndexPaths: Array<string>;
 };
 
 export type SessionWatchRegistration = {
@@ -114,7 +117,6 @@ export type SessionWatchRegistration = {
   provider: AgentSessionProvider;
   runtimeHome: string;
   watchTargets: Array<SessionWatchTarget>;
-  gitIndexPaths: Array<string>;
 };
 
 export type SessionWatchEventPayload = {
@@ -148,7 +150,6 @@ export type AgentSessionFileDiff = {
   diffBaseLabel: string;
   diffTargetLabel: string;
   fileMissing: boolean;
-  isTracked: boolean;
 };
 
 export type DescriptionGraphNode = { label: string; path: string; activities: Array<string> };

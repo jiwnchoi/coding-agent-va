@@ -70,7 +70,7 @@ export function FileDiffViewer({
             {diff
               ? viewerMode === "read"
                 ? "Read-only workspace file"
-                : `${diff.diffBaseLabel} -> ${diff.diffTargetLabel}${diff.isTracked ? "" : " (untracked)"}`
+                : `${diff.diffBaseLabel} -> ${diff.diffTargetLabel}`
               : "Select a file to inspect changes."}
           </p>
         </div>

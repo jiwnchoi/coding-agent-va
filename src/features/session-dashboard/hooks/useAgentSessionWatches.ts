@@ -20,10 +20,7 @@ type CurrentRef<T> = {
   current: T;
 };
 
-export function useAgentSessionWatches(
-  runtimeSources: AgentRuntimeSource[],
-  hydratedSessions: AgentSessionSummary[]
-) {
+export function useAgentSessionWatches(runtimeSources: AgentRuntimeSource[]) {
   const [watchRegistrations, setWatchRegistrations] = useState<SessionWatchRegistration[]>([]);
   const activeWatchIdsRef = useRef<string[]>([]);
   const runtimeSourcesRef = useRef(runtimeSources);
@@ -36,16 +33,6 @@ export function useAgentSessionWatches(
     )
     .sort()
     .join("\0");
-  const hydratedWorkspaceKey = [
-    ...new Set(
-      hydratedSessions.flatMap((session) =>
-        session.cwd ? [`${session.provider}:${session.cwd}`] : []
-      )
-    ),
-  ]
-    .sort()
-    .join("\0");
-
   useEffect(() => {
     const availableSources = runtimeSourcesRef.current.filter((source) => source.available);
     let disposed = false;
@@ -110,7 +97,7 @@ export function useAgentSessionWatches(
       };
       watchTransitionRef.current = watchTransitionRef.current.then(stopWatches, stopWatches);
     };
-  }, [hydratedWorkspaceKey, runtimeSourceKey]);
+  }, [runtimeSourceKey]);
 
   return runtimeSources.some((source) => source.available)
     ? watchRegistrations
@@ -136,11 +123,6 @@ export function useAgentSessionWatchRefresh(
     let pendingSessionsRefresh = false;
     let pendingSessionDetailsRefresh = false;
     const activeWatchIds = new Set(watchRegistrations.map((registration) => registration.watchId));
-    const gitIndexPaths = new Set(
-      watchRegistrations
-        .flatMap((registration) => registration.gitIndexPaths)
-        .map(normalizeWatchPath)
-    );
 
     function scheduleRefresh() {
       if (refreshTimeoutId !== null) {
@@ -237,7 +219,7 @@ export function useAgentSessionWatchRefresh(
         return;
       }
 
-      pendingSessionsRefresh ||= !isGitIndexOnlyChange(changedPaths, gitIndexPaths);
+      pendingSessionsRefresh = true;
       pendingSessionDetailsRefresh ||= selectedSessionInputChanged(
         sessionsRef.current,
         selectedSessionIdRef.current,
@@ -275,20 +257,6 @@ function isControlWatchEvent(payload: SessionWatchEventPayload) {
   return payload.eventTags.some(
     (tag) => tag === "watch_started" || tag === "watch_stopped" || tag.startsWith("watch_error:")
   );
-}
-
-function isGitIndexOnlyChange(changedPaths: Set<string>, gitIndexPaths: Set<string>) {
-  if (changedPaths.size === 0) {
-    return false;
-  }
-
-  for (const path of changedPaths) {
-    if (!gitIndexPaths.has(path)) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function selectedSessionInputChanged(

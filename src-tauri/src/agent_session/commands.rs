@@ -10,15 +10,14 @@ use crate::indexer::WorkspaceIndexState;
 use crate::shared::logger::{LogLevel, Logger};
 
 use super::cache::{
-    cache_loaded_sessions, create_watch_plan_cached, invalidate_watch_caches,
-    list_session_candidates_cached,
+    create_watch_plan_cached, invalidate_watch_caches, list_session_candidates_cached,
 };
 use super::description::{describe_session_node, NodeDescriptionCacheState};
 use super::file_system::resolve_existing_dir;
-use super::git::read_agent_session_file_diff;
 use super::protocols::default_runtime_sources;
 use super::protocols::AgentSessionCandidate;
 use super::session_details::read_session_details_cached;
+use super::session_diff::read_agent_session_file_diff;
 use super::state::{AgentSessionWatchState, SessionWatchHandle};
 use super::time::now_timestamp_ms;
 use super::types::{
@@ -135,7 +134,6 @@ pub async fn list_agent_sessions(
                         .provider
                         .protocol()
                         .hydrate_sessions(runtime_home, &page_candidates);
-                    cache_loaded_sessions(&state, source.provider, runtime_home, &sessions);
                     Some(sessions)
                 })
                 .collect::<Vec<_>>()
@@ -199,25 +197,35 @@ fn hydrate_session_page(
 
 #[tauri::command]
 pub async fn plan_agent_session_watch(
-    state: State<'_, AgentSessionWatchState>,
     provider: AgentSessionProvider,
     runtime_home: String,
 ) -> Result<SessionWatchPlan, String> {
-    let state = state.inner().clone();
     run_blocking("session watch planning", move || {
         let protocol = provider.protocol();
-        create_watch_plan_cached(&state, protocol.as_ref(), &PathBuf::from(runtime_home))
+        create_watch_plan_cached(protocol.as_ref(), &PathBuf::from(runtime_home))
     })
     .await
 }
 
 #[tauri::command]
 pub async fn get_agent_session_file_diff(
+    provider: AgentSessionProvider,
+    transcript_path: String,
     file_path: String,
     cwd: Option<String>,
+    replay_session: bool,
+    start_entry_index: Option<usize>,
+    end_entry_index: Option<usize>,
 ) -> Result<AgentSessionFileDiff, String> {
     run_blocking("session file diff", move || {
-        read_agent_session_file_diff(&PathBuf::from(file_path), cwd.as_deref())
+        read_agent_session_file_diff(
+            provider,
+            &PathBuf::from(transcript_path),
+            &PathBuf::from(file_path),
+            cwd.as_deref(),
+            replay_session,
+            start_entry_index.zip(end_entry_index),
+        )
     })
     .await
 }
@@ -230,14 +238,9 @@ pub async fn start_agent_session_watch(
     runtime_home: String,
 ) -> Result<SessionWatchRegistration, String> {
     let state = state.inner().clone();
-    let state_for_plan = state.clone();
     let plan = run_blocking("session watch startup", move || {
         let protocol = provider.protocol();
-        create_watch_plan_cached(
-            &state_for_plan,
-            protocol.as_ref(),
-            &PathBuf::from(runtime_home),
-        )
+        create_watch_plan_cached(protocol.as_ref(), &PathBuf::from(runtime_home))
     })
     .await?;
     let watch_id = plan.watch_id.clone();
@@ -253,11 +256,6 @@ pub async fn start_agent_session_watch(
     })
     .await;
     let runtime_home_path = PathBuf::from(&plan.runtime_home);
-    let git_index_paths = plan
-        .git_index_paths
-        .iter()
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
     let watch_paths = watched_paths_from_targets(&plan.watch_targets);
 
     stop_existing_watch(&state, &watch_id);
@@ -281,34 +279,20 @@ pub async fn start_agent_session_watch(
     let app_handle = app.clone();
     let watch_id_for_task = watch_id.clone();
     let runtime_home_for_task = runtime_home_path.clone();
-    let git_index_paths_for_task = git_index_paths.clone();
     let wx = Watchexec::new(move |action| {
         let changed_paths = action
             .events
             .iter()
             .flat_map(|event| event.paths().map(|(path, _)| path.to_path_buf()))
             .map(|path| normalize_watch_event_path(&path))
-            .filter(|path| {
-                is_relevant_watch_path(
-                    provider,
-                    path,
-                    &runtime_home_for_task,
-                    &git_index_paths_for_task,
-                )
-            })
+            .filter(|path| is_relevant_watch_path(provider, path, &runtime_home_for_task))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
 
         if !changed_paths.is_empty() {
-            invalidate_watch_caches(
-                &app_handle,
-                provider,
-                &runtime_home_for_task,
-                &changed_paths,
-                &git_index_paths_for_task,
-            );
+            invalidate_watch_caches(&app_handle, provider, &runtime_home_for_task);
 
             let event_tags = action
                 .events
@@ -379,7 +363,6 @@ pub async fn start_agent_session_watch(
         provider: plan.provider,
         runtime_home: plan.runtime_home,
         watch_targets: plan.watch_targets,
-        git_index_paths: plan.git_index_paths,
     })
 }
 
