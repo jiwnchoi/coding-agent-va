@@ -66,6 +66,11 @@ pub(crate) fn read_session_details(
     consolidate_session_tasks(&mut turns);
     consolidate_interrupted_turns(&mut turns, &interrupted_turns);
     session_activity.retain_workspace_paths(cwd);
+    let context_read_files = session_activity
+        .read_files
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
     let mut file_activity = finish_file_activity(cwd, session_activity.clone());
     let impacted_relations = resolve_impacted_file_relations(
         cwd,
@@ -73,11 +78,26 @@ pub(crate) fn read_session_details(
         &session_activity.deleted_files,
         &session_activity.edit_fragments,
     )?;
-    apply_impacted_relations(cwd, &mut file_activity, &impacted_relations);
+    apply_impacted_relations(
+        cwd,
+        &mut file_activity,
+        &impacted_relations,
+        &context_read_files,
+    );
     for turn in &mut turns {
-        apply_impacted_relations(cwd, &mut turn.file_activity, &impacted_relations);
+        apply_impacted_relations(
+            cwd,
+            &mut turn.file_activity,
+            &impacted_relations,
+            &context_read_files,
+        );
         for task in &mut turn.tasks {
-            apply_impacted_relations(cwd, &mut task.file_activity, &impacted_relations);
+            apply_impacted_relations(
+                cwd,
+                &mut task.file_activity,
+                &impacted_relations,
+                &context_read_files,
+            );
         }
     }
     Ok(AgentSessionDetails {
@@ -113,6 +133,7 @@ fn apply_impacted_relations(
     cwd: Option<&str>,
     activity: &mut AgentSessionFileActivity,
     session_relations: &[super::types::AgentSessionImpactedFileRelation],
+    context_read_files: &[String],
 ) {
     let changed_files = activity
         .edited_files
@@ -125,14 +146,23 @@ fn apply_impacted_relations(
         .filter(|relation| changed_files.contains(&relation.changed_file))
         .cloned()
         .collect();
-    activity.impacted_files = activity
+    let impacted_files = activity
         .impacted_relations
         .iter()
         .map(|relation| relation.impacted_file.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+        .collect::<HashSet<_>>();
+    activity.impacted_files = impacted_files.iter().cloned().collect();
     activity.impacted_files.sort();
+    let mut contextual_reads = context_read_files
+        .iter()
+        .filter(|path| {
+            workspace_relative_path(cwd, path).is_some_and(|path| impacted_files.contains(&path))
+        })
+        .filter(|path| !activity.read_files.contains(path))
+        .cloned()
+        .collect::<Vec<_>>();
+    contextual_reads.sort();
+    activity.read_files.extend(contextual_reads);
 }
 
 fn workspace_relative_path(cwd: Option<&str>, path: &str) -> Option<String> {
@@ -911,10 +941,19 @@ mod tests {
             },
         ];
 
-        apply_impacted_relations(Some("/workspace"), &mut activity, &relations);
+        apply_impacted_relations(
+            Some("/workspace"),
+            &mut activity,
+            &relations,
+            &[
+                "/workspace/src/importer.ts".to_string(),
+                "/workspace/src/other-importer.ts".to_string(),
+            ],
+        );
 
         assert_eq!(activity.impacted_relations.len(), 1);
         assert_eq!(activity.impacted_files, ["src/importer.ts"]);
+        assert_eq!(activity.read_files, ["/workspace/src/importer.ts"]);
     }
 
     #[test]

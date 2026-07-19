@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { normalizeWorkspacePath } from "@/features/session-dashboard/context-graph/contextGraphPaths";
@@ -16,6 +17,7 @@ export function SessionMarkdownMessage({
   header,
   fileActivity,
   workspacePath,
+  onPress,
   onToggle,
   onOpenFile,
 }: {
@@ -26,26 +28,57 @@ export function SessionMarkdownMessage({
   header: ReactNode;
   fileActivity: AgentSessionFileActivity;
   workspacePath: string | null;
+  onPress?: () => void;
   onToggle: () => void;
   onOpenFile: (selection: SelectedActivityFile) => void;
 }) {
+  const preview = messagePreview(source);
+  const isMessageExpanded = preview.isExpandable && isExpanded;
+  const chevronClassName = cn(
+    "text-muted-foreground size-4 shrink-0",
+    header && "mt-1.5 self-start"
+  );
+  const content = (
+    <>
+      <span className="min-w-0 flex-1">
+        {header}
+        {!isMessageExpanded ? (
+          <span className={cn("block text-sm whitespace-pre-wrap", header && "mt-1")}>
+            {preview.text}
+          </span>
+        ) : null}
+      </span>
+      {preview.isExpandable ? (
+        isMessageExpanded ? (
+          <ChevronDown className={chevronClassName} aria-hidden="true" />
+        ) : (
+          <ChevronRight className={chevronClassName} aria-hidden="true" />
+        )
+      ) : null}
+    </>
+  );
+
   return (
     <div className={className}>
-      <button
-        type="button"
-        className={cn(
-          "hover:bg-accent w-full px-3 text-left transition-colors",
-          isExpanded ? "pt-3 pb-2" : "py-3"
-        )}
-        aria-expanded={isExpanded}
-        aria-pressed={isPressed}
-        onClick={onToggle}>
-        {header}
-        {!isExpanded ? (
-          <span className="mt-1 block text-sm whitespace-pre-wrap">{messagePreview(source)}</span>
-        ) : null}
-      </button>
-      {isExpanded ? (
+      {preview.isExpandable || onPress ? (
+        <button
+          type="button"
+          className="hover:bg-accent flex w-full items-center gap-2 px-3 py-3 text-left transition-colors"
+          aria-expanded={preview.isExpandable ? isMessageExpanded : undefined}
+          aria-pressed={isPressed}
+          onClick={() => {
+            onPress?.();
+            if (preview.isExpandable) onToggle();
+          }}>
+          {content}
+          {preview.isExpandable ? (
+            <span className="sr-only">{isMessageExpanded ? "Collapse" : "Expand"}</span>
+          ) : null}
+        </button>
+      ) : (
+        <div className="flex w-full items-center gap-2 px-3 py-3 text-left">{content}</div>
+      )}
+      {isMessageExpanded ? (
         <div className={cn(styles.markdown, "px-3 pb-3 text-sm leading-6")}>
           <MdxDescription
             source={source}
@@ -62,7 +95,8 @@ export function SessionMarkdownMessage({
 function messagePreview(text: string) {
   const firstLine = text.split(/\r?\n/, 1)[0]?.trim() ?? "";
   const preview = firstLine.slice(0, 120).trimEnd();
-  return preview.length < firstLine.length || text.trim() !== firstLine ? `${preview}…` : preview;
+  const isExpandable = preview.length < firstLine.length || text.trim() !== firstLine;
+  return { isExpandable, text: isExpandable ? `${preview}…` : preview };
 }
 
 function fileSelectionForPath(

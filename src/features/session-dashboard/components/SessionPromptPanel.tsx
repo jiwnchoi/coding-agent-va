@@ -178,20 +178,22 @@ function PromptTrackingList({
                     isSelected && "bg-accent"
                   )}
                   header={
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-                        <MessageSquareText className="size-3.5" /> User prompt
+                    promptIndex === 0 ? (
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
+                          <MessageSquareText className="size-3.5" /> User prompt
+                        </span>
+                        <FileActivityMetrics
+                          fileActivity={turn.fileActivity}
+                          workspacePath={workspacePath}
+                        />
                       </span>
-                      <FileActivityMetrics
-                        fileActivity={turn.fileActivity}
-                        workspacePath={workspacePath}
-                      />
-                    </span>
+                    ) : null
                   }
-                  onToggle={() => {
+                  onPress={() => {
                     onSelectScope(isSelected ? null : { turnId: turn.id, taskId: null });
-                    onToggleMessage(promptMessageId);
                   }}
+                  onToggle={() => onToggleMessage(promptMessageId)}
                   onOpenFile={onSelectFile}
                   fileActivity={turn.fileActivity}
                   workspacePath={workspacePath}
