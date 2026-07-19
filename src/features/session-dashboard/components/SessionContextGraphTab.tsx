@@ -85,7 +85,6 @@ export function SessionContextGraphTab({
           isLoading={detailsQuery.isPending}
           selectedScope={resolvedSelection}
           showReadFiles={showReadFiles}
-          sessionTitle={selectedSession.title}
           workspacePath={selectedSession.cwd}
           onSelectScope={(selection) => {
             onScopeChange(selection);

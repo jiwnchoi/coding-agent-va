@@ -26,7 +26,6 @@ export function SessionPromptPanel({
   isLoading,
   selectedScope,
   showReadFiles,
-  sessionTitle,
   workspacePath,
   onSelectScope,
   onSelectFile,
@@ -36,7 +35,6 @@ export function SessionPromptPanel({
   isLoading: boolean;
   selectedScope: SessionScopeSelection | null;
   showReadFiles: boolean;
-  sessionTitle: string;
   workspacePath: string | null;
   onSelectScope: (selection: SessionScopeSelection | null) => void;
   onSelectFile: (selection: SelectedActivityFile) => void;
@@ -71,10 +69,6 @@ export function SessionPromptPanel({
 
   return (
     <aside className="bg-card border-border flex h-full min-h-0 flex-col border-r">
-      <div className="border-border border-b px-4 py-3">
-        <p className="truncate text-sm font-medium">{sessionTitle}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs">Session activity</p>
-      </div>
       <div className="border-border grid grid-cols-2 border-b p-2" role="tablist">
         <button
           type="button"
